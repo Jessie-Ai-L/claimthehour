@@ -19,3 +19,4 @@ Payments and persistent claims are intentionally not connected yet.
 npm install
 npm run deploy
 ```
+V1.1 deployment trigger
