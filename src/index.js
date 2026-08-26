@@ -245,7 +245,7 @@ function html() {
     const s = Math.floor(ms/1000);
     document.getElementById('todayDate').textContent = dateText;
     document.getElementById('localTime').textContent = timeText;
-    document.getElementById('timeLeft').textContent = `${h}h ${m}m ${s}s`;
+    document.getElementById('timeLeft').textContent = h + 'h ' + m + 'm ' + s + 's';
 
     document.querySelectorAll('.slot').forEach(el=>{
       el.style.outline = '';
