@@ -1,0 +1,7 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "claimthehour",
+  "main": "src/index.js",
+  "compatibility_date": "2026-08-26",
+  "workers_dev": true
+}
