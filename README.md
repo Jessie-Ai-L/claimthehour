@@ -1,25 +1,21 @@
-# ClaimTheHour
+# ClaimTheHour V1.1
 
-**24 hours. 24 spots. Claim yours.**
+A polished Cloudflare Worker landing page for ClaimTheHour.
 
-V1 is a lightweight Cloudflare Worker landing page used to validate the core product idea before adding payments and a database.
+## Includes
+- Refined hero and navigation
+- Live local clock and time-left-today countdown
+- Compact 24-hour marketplace board
+- First-come-first-served messaging
+- How it works
+- FAQ
+- Responsive design
+- Preview claim modal
 
-## Local development
-
-```bash
-npm install
-npm run dev
-```
+Payments and persistent claims are intentionally not connected yet.
 
 ## Deploy
-
 ```bash
 npm install
 npm run deploy
 ```
-
-Next planned steps:
-- Cloudflare D1 for claims
-- Stripe Checkout
-- Payment verification webhook
-- Custom domain: claimthehour.com
