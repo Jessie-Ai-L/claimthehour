@@ -3,5 +3,12 @@
   "name": "claimthehour",
   "main": "src/index.js",
   "compatibility_date": "2026-08-26",
-  "workers_dev": true
+  "workers_dev": true,
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "claimthehour-db",
+      "database_id": "4b36d7eb-5370-4506-b5a2-6370b1d02270"
+    }
+  ]
 }

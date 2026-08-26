@@ -1,21 +1,23 @@
-# ClaimTheHour V1.1
+# ClaimTheHour V1.2 — D1 integrated
 
-A polished Cloudflare Worker landing page for ClaimTheHour.
+This build connects the live board to Cloudflare D1.
 
-## Includes
-- Refined hero and navigation
-- Live local clock and time-left-today countdown
-- Compact 24-hour marketplace board
-- First-come-first-served messaging
-- How it works
-- FAQ
-- Responsive design
-- Preview claim modal
+## What works
+- Reads today's claims from D1
+- Shows paid claims as CLAIMED
+- Shows active pending reservations as HELD
+- Claim form validates product name, URL, description
+- Creates a 15-minute pending reservation in D1
+- Automatically releases stale pending reservations
+- Uses UTC consistently for the daily board
+- Keeps the existing polished V1.1 UI
 
-Payments and persistent claims are intentionally not connected yet.
+## Not connected yet
+Stripe Checkout is intentionally not connected in this build. After a reservation is created, the UI clearly says payment is the next step.
 
-## Deploy
-```bash
-npm install
-npm run deploy
-```
+## D1 binding
+`wrangler.jsonc` includes:
+- binding: `DB`
+- database: `claimthehour-db`
+
+The existing Cloudflare D1 binding and database are preserved by configuration.
