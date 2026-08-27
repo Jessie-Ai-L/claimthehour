@@ -488,6 +488,39 @@ async function reserveClaim(request, env) {
 
 async function handlePayPalReturn(request, env) {
   const url = new URL(request.url);
+
+      // SEO foundation: serve crawler files explicitly instead of falling back to homepage.
+      if (url.pathname === "/robots.txt") {
+        return new Response(
+          "User-agent: *\nAllow: /\n\nSitemap: https://claimthehour.com/sitemap.xml\n",
+          {
+            status: 200,
+            headers: {
+              "content-type": "text/plain; charset=UTF-8",
+              "cache-control": "public, max-age=3600"
+            }
+          }
+        );
+      }
+
+      if (url.pathname === "/sitemap.xml") {
+        const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://claimthehour.com/</loc></url>
+  <url><loc>https://claimthehour.com/privacy</loc></url>
+  <url><loc>https://claimthehour.com/terms</loc></url>
+  <url><loc>https://claimthehour.com/refunds</loc></url>
+  <url><loc>https://claimthehour.com/contact</loc></url>
+</urlset>`;
+        return new Response(sitemap, {
+          status: 200,
+          headers: {
+            "content-type": "application/xml; charset=UTF-8",
+            "cache-control": "public, max-age=3600"
+          }
+        });
+      }
+
   const reservationId = Number(url.searchParams.get("reservation_id"));
   const orderId = String(url.searchParams.get("token") || "");
 
@@ -737,10 +770,7 @@ function html() {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>ClaimTheHour — Own an hour of the internet</title>
-  <meta name="description" content="24 hours. 24 spots. One day. Claim an hour of the internet for $1 and put your product in the spotlight.">
-  <meta property="og:title" content="ClaimTheHour">
-  <meta property="og:description" content="24 hours. 24 spots. One day. Claim yours.">
+  <title>ClaimTheHour — Claim an Hour of the Internet for $1</title>
   <meta name="theme-color" content="#fbfaf7">
   <style>
     :root{
@@ -881,6 +911,28 @@ function html() {
 }
 
 </style>
+
+<meta name="description" content="Claim one of 24 daily internet spots for $1. Pick an open UTC hour, complete checkout, and feature your product or website for that hour.">
+<meta name="robots" content="index,follow,max-image-preview:large">
+<link rel="canonical" href="https://claimthehour.com/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="ClaimTheHour">
+<meta property="og:title" content="ClaimTheHour — Claim an Hour of the Internet for $1">
+<meta property="og:description" content="24 hours. 24 spots. Pick an open hour, claim it for $1, and put your product in the spotlight.">
+<meta property="og:url" content="https://claimthehour.com/">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="ClaimTheHour — Claim an Hour of the Internet for $1">
+<meta name="twitter:description" content="24 hours. 24 spots. Claim an open UTC hour for $1.">
+<script type="application/ld+json">
+{
+  "@context":"https://schema.org",
+  "@type":"WebSite",
+  "name":"ClaimTheHour",
+  "url":"https://claimthehour.com/",
+  "description":"Claim one of 24 daily internet spots for $1 and feature your product or website for that hour."
+}
+</script>
+
 </head>
 <body>
 <div class="wrap">
@@ -1139,9 +1191,9 @@ export default {
     if (url.pathname === "/health") {
       try {
         const row = await env.DB.prepare("SELECT 1 AS ok").first();
-        return json({ ok: row?.ok === 1, service: "claimthehour", version: "1.5.3", d1: true, paypal_env: env.PAYPAL_ENV || "sandbox", paypal_configured: Boolean(env.PAYPAL_CLIENT_ID && env.PAYPAL_CLIENT_SECRET), webhook_configured: Boolean(env.PAYPAL_WEBHOOK_ID) });
+        return json({ ok: row?.ok === 1, service: "claimthehour", version: "1.6", d1: true, paypal_env: env.PAYPAL_ENV || "sandbox", paypal_configured: Boolean(env.PAYPAL_CLIENT_ID && env.PAYPAL_CLIENT_SECRET), webhook_configured: Boolean(env.PAYPAL_WEBHOOK_ID) });
       } catch {
-        return json({ ok: false, service: "claimthehour", version: "1.5.3", d1: false }, 500);
+        return json({ ok: false, service: "claimthehour", version: "1.6", d1: false }, 500);
       }
     }
 

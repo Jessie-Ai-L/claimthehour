@@ -1,8 +1,24 @@
-# ClaimTheHour V1.5.3 — Footer fix
+# ClaimTheHour V1.6 — SEO Foundation
 
-Narrow patch only:
-- removes the legacy duplicate footer
-- preserves the single launch footer with Privacy / Terms / Refunds / Contact
-- does not change PayPal, D1, holds, claims, webhook logic, or the 4-card facts strip
+Built from the accepted V1.5.3 UI version.
 
-No database migration is required.
+Adds:
+- `/robots.txt` as real `text/plain`
+- `/sitemap.xml` as real XML
+- sitemap entries for homepage, Privacy, Terms, Refunds, Contact
+- optimized homepage title
+- meta description
+- robots meta tag
+- canonical URL
+- Open Graph metadata
+- Twitter metadata
+- basic WebSite JSON-LD structured data
+
+Not changed:
+- PayPal checkout/webhook logic
+- D1 database logic
+- 15-minute holds
+- claim/payment business logic
+- accepted homepage UI/footer
+
+No database migration required.
