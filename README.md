@@ -1,24 +1,11 @@
-# ClaimTheHour V1.6 — SEO Foundation
+# ClaimTheHour V1.6.1 — SEO route fix
 
-Built from the accepted V1.5.3 UI version.
+Fixes a routing mistake in V1.6:
+- `/robots.txt` is now handled in the actual Worker fetch router
+- `/sitemap.xml` is now handled in the actual Worker fetch router
+- both routes execute before the homepage fallback
 
-Adds:
-- `/robots.txt` as real `text/plain`
-- `/sitemap.xml` as real XML
-- sitemap entries for homepage, Privacy, Terms, Refunds, Contact
-- optimized homepage title
-- meta description
-- robots meta tag
-- canonical URL
-- Open Graph metadata
-- Twitter metadata
-- basic WebSite JSON-LD structured data
+All V1.6 homepage SEO metadata remains intact.
 
-Not changed:
-- PayPal checkout/webhook logic
-- D1 database logic
-- 15-minute holds
-- claim/payment business logic
-- accepted homepage UI/footer
-
+No payment, D1, hold, claim, UI, or webhook business logic changed.
 No database migration required.

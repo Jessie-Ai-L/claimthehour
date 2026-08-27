@@ -488,39 +488,6 @@ async function reserveClaim(request, env) {
 
 async function handlePayPalReturn(request, env) {
   const url = new URL(request.url);
-
-      // SEO foundation: serve crawler files explicitly instead of falling back to homepage.
-      if (url.pathname === "/robots.txt") {
-        return new Response(
-          "User-agent: *\nAllow: /\n\nSitemap: https://claimthehour.com/sitemap.xml\n",
-          {
-            status: 200,
-            headers: {
-              "content-type": "text/plain; charset=UTF-8",
-              "cache-control": "public, max-age=3600"
-            }
-          }
-        );
-      }
-
-      if (url.pathname === "/sitemap.xml") {
-        const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url><loc>https://claimthehour.com/</loc></url>
-  <url><loc>https://claimthehour.com/privacy</loc></url>
-  <url><loc>https://claimthehour.com/terms</loc></url>
-  <url><loc>https://claimthehour.com/refunds</loc></url>
-  <url><loc>https://claimthehour.com/contact</loc></url>
-</urlset>`;
-        return new Response(sitemap, {
-          status: 200,
-          headers: {
-            "content-type": "application/xml; charset=UTF-8",
-            "cache-control": "public, max-age=3600"
-          }
-        });
-      }
-
   const reservationId = Number(url.searchParams.get("reservation_id"));
   const orderId = String(url.searchParams.get("token") || "");
 
@@ -1188,12 +1155,44 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
+    // SEO crawler endpoints must be handled before the homepage fallback.
+    if (url.pathname === "/robots.txt") {
+      return new Response(
+        "User-agent: *\nAllow: /\n\nSitemap: https://claimthehour.com/sitemap.xml\n",
+        {
+          status: 200,
+          headers: {
+            "content-type": "text/plain; charset=UTF-8",
+            "cache-control": "public, max-age=3600"
+          }
+        }
+      );
+    }
+
+    if (url.pathname === "/sitemap.xml") {
+      const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://claimthehour.com/</loc></url>
+  <url><loc>https://claimthehour.com/privacy</loc></url>
+  <url><loc>https://claimthehour.com/terms</loc></url>
+  <url><loc>https://claimthehour.com/refunds</loc></url>
+  <url><loc>https://claimthehour.com/contact</loc></url>
+</urlset>`;
+      return new Response(sitemap, {
+        status: 200,
+        headers: {
+          "content-type": "application/xml; charset=UTF-8",
+          "cache-control": "public, max-age=3600"
+        }
+      });
+    }
+
     if (url.pathname === "/health") {
       try {
         const row = await env.DB.prepare("SELECT 1 AS ok").first();
-        return json({ ok: row?.ok === 1, service: "claimthehour", version: "1.6", d1: true, paypal_env: env.PAYPAL_ENV || "sandbox", paypal_configured: Boolean(env.PAYPAL_CLIENT_ID && env.PAYPAL_CLIENT_SECRET), webhook_configured: Boolean(env.PAYPAL_WEBHOOK_ID) });
+        return json({ ok: row?.ok === 1, service: "claimthehour", version: "1.6.1", d1: true, paypal_env: env.PAYPAL_ENV || "sandbox", paypal_configured: Boolean(env.PAYPAL_CLIENT_ID && env.PAYPAL_CLIENT_SECRET), webhook_configured: Boolean(env.PAYPAL_WEBHOOK_ID) });
       } catch {
-        return json({ ok: false, service: "claimthehour", version: "1.6", d1: false }, 500);
+        return json({ ok: false, service: "claimthehour", version: "1.6.1", d1: false }, 500);
       }
     }
 
