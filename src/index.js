@@ -943,8 +943,6 @@ function html() {
   </main>
 </div>
 
-<footer><div class="wrap footer-row"><div class="footer-brand"><strong>ClaimTheHour</strong><span>24 hours. 24 spots. Claim yours.</span></div><div class="footer-links"><a href="#how">How it works</a><a href="#faq">FAQ</a><a href="#board">Today's board</a><span>© 2026 ClaimTheHour</span></div></div></footer>
-
 <div class="modal" id="modal">
   <div class="modal-card">
     <div class="pill">PAYPAL SANDBOX</div>
@@ -1141,9 +1139,9 @@ export default {
     if (url.pathname === "/health") {
       try {
         const row = await env.DB.prepare("SELECT 1 AS ok").first();
-        return json({ ok: row?.ok === 1, service: "claimthehour", version: "1.5.2", d1: true, paypal_env: env.PAYPAL_ENV || "sandbox", paypal_configured: Boolean(env.PAYPAL_CLIENT_ID && env.PAYPAL_CLIENT_SECRET), webhook_configured: Boolean(env.PAYPAL_WEBHOOK_ID) });
+        return json({ ok: row?.ok === 1, service: "claimthehour", version: "1.5.3", d1: true, paypal_env: env.PAYPAL_ENV || "sandbox", paypal_configured: Boolean(env.PAYPAL_CLIENT_ID && env.PAYPAL_CLIENT_SECRET), webhook_configured: Boolean(env.PAYPAL_WEBHOOK_ID) });
       } catch {
-        return json({ ok: false, service: "claimthehour", version: "1.5.2", d1: false }, 500);
+        return json({ ok: false, service: "claimthehour", version: "1.5.3", d1: false }, 500);
       }
     }
 
