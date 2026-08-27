@@ -649,6 +649,53 @@ function legalPage(title, slug, bodyHtml) {
     .site-footer a:hover{text-decoration:underline}
     @media(max-width:820px){.trust-strip{grid-template-columns:repeat(2,1fr)}}
 
+
+    .trust-strip{
+      max-width:1180px;
+      margin:42px auto 76px;
+      display:grid;
+      grid-template-columns:repeat(4,minmax(0,1fr));
+      gap:14px;
+    }
+    .trust-strip>div{
+      min-width:0;
+      background:rgba(255,255,255,.82);
+      border:1px solid #e9e0d5;
+      border-radius:18px;
+      padding:18px 20px;
+      display:flex;
+      flex-direction:column;
+      gap:3px;
+      box-shadow:0 8px 28px rgba(20,20,20,.04);
+    }
+    .trust-strip strong{font-size:24px;line-height:1.1;letter-spacing:-.03em}
+    .trust-strip span{font-size:13px;line-height:1.35;color:#727780}
+    .site-footer{
+      max-width:1180px;
+      margin:72px auto 0;
+      padding:30px 0 40px;
+      border-top:1px solid #e7dfd4;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:24px;
+      flex-wrap:wrap;
+      color:#6f737b;
+      font-size:14px;
+    }
+    .site-footer .footer-brand{display:flex;flex-direction:column;gap:4px}
+    .site-footer .footer-brand strong{color:#111318;font-size:16px}
+    .site-footer nav{display:flex;gap:18px;flex-wrap:wrap;align-items:center}
+    .site-footer a{text-decoration:none;color:inherit}
+    .site-footer a:hover{text-decoration:underline}
+    @media(max-width:820px){
+      .trust-strip{grid-template-columns:repeat(2,minmax(0,1fr));margin:30px auto 58px}
+      .site-footer{align-items:flex-start;flex-direction:column}
+    }
+    @media(max-width:520px){
+      .trust-strip{grid-template-columns:1fr}
+    }
+
 </style>
 </head>
 <body>
@@ -796,13 +843,15 @@ function html() {
       <div class="grid">${slots}</div>
     </section>
 
-    <section class="trust-strip">
-          <div><strong>24</strong><span>daily spots</span></div>
-          <div><strong>$1</strong><span>flat claim price</span></div>
-          <div><strong>UTC</strong><span>one global clock</span></div>
-          <div><strong>15 min</strong><span>checkout hold</span></div>
-        </section>
-        <section class="how" id="how">
+    
+<section class="trust-strip" aria-label="ClaimTheHour facts">
+  <div><strong>24</strong><span>daily spots</span></div>
+  <div><strong>$1</strong><span>flat claim price</span></div>
+  <div><strong>UTC</strong><span>one global clock</span></div>
+  <div><strong>15 min</strong><span>checkout hold</span></div>
+</section>
+
+<section class="how" id="how">
       <div class="section-label">HOW IT WORKS</div>
       <div class="steps">
         <div class="step"><div class="step-num">01</div><h3>Pick an hour</h3><p>Choose any open spot on today's UTC board.</p></div>
@@ -988,13 +1037,21 @@ function html() {
   loadBoard();
 </script>
 
+
 <footer class="site-footer">
-  <div>© 2026 ClaimTheHour · 24 hours. 24 spots. One day.</div>
-  <nav>
+  <div class="footer-brand">
+    <strong>ClaimTheHour</strong>
+    <span>24 hours. 24 spots. Claim yours.</span>
+  </div>
+  <nav aria-label="Footer navigation">
+    <a href="#how">How it works</a>
+    <a href="#faq">FAQ</a>
+    <a href="#board">Today's board</a>
     <a href="/privacy">Privacy</a>
     <a href="/terms">Terms</a>
     <a href="/refunds">Refunds</a>
     <a href="/contact">Contact</a>
+    <span>© 2026 ClaimTheHour</span>
   </nav>
 </footer>
 
@@ -1009,9 +1066,9 @@ export default {
     if (url.pathname === "/health") {
       try {
         const row = await env.DB.prepare("SELECT 1 AS ok").first();
-        return json({ ok: row?.ok === 1, service: "claimthehour", version: "1.5", d1: true, paypal_env: env.PAYPAL_ENV || "sandbox", paypal_configured: Boolean(env.PAYPAL_CLIENT_ID && env.PAYPAL_CLIENT_SECRET), webhook_configured: Boolean(env.PAYPAL_WEBHOOK_ID) });
+        return json({ ok: row?.ok === 1, service: "claimthehour", version: "1.5.1", d1: true, paypal_env: env.PAYPAL_ENV || "sandbox", paypal_configured: Boolean(env.PAYPAL_CLIENT_ID && env.PAYPAL_CLIENT_SECRET), webhook_configured: Boolean(env.PAYPAL_WEBHOOK_ID) });
       } catch {
-        return json({ ok: false, service: "claimthehour", version: "1.5", d1: false }, 500);
+        return json({ ok: false, service: "claimthehour", version: "1.5.1", d1: false }, 500);
       }
     }
 

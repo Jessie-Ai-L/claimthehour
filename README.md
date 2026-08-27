@@ -1,19 +1,12 @@
-# ClaimTheHour V1.5 — UI + Legal polish
+# ClaimTheHour V1.5.1 — UI cleanup
 
-Adds:
-- Privacy Policy
-- Terms of Service
-- Refund Policy
-- Contact page
-- Footer navigation
-- Homepage trust/clarity strip
-- Small visual polish for a more launch-ready feel
+This patch is intentionally narrow and does not change payment, D1, hold, or webhook logic.
 
-Keeps:
-- Existing D1 reservation logic
-- PayPal Sandbox payment flow
-- Existing webhook code and variables
-- 15-minute hold logic
-- Existing concurrency protections
+Fixes:
+- Rebuilds the 24 / $1 / UTC / 15 min facts strip as responsive cards
+- Removes duplicate footer output
+- Keeps one polished footer
+- Adds Privacy, Terms, Refunds, and Contact links to that footer
+- Improves mobile behavior for the facts strip and footer
 
-No D1 migration is required.
+No database migration is required.
