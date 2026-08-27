@@ -5,6 +5,7 @@ const HOURS = Array.from({ length: 24 }, (_, i) => {
 });
 
 const HOLD_MINUTES = 15;
+const PRICE_USD = "1.00";
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -41,6 +42,121 @@ function normalizeUrl(value) {
   } catch {
     return null;
   }
+}
+
+function labelForHourServer(hour) {
+  const h = hour % 12 || 12;
+  return `${h} ${hour < 12 ? "AM" : "PM"}`;
+}
+
+function paypalBase(env) {
+  return String(env.PAYPAL_ENV || "sandbox").toLowerCase() === "live"
+    ? "https://api-m.paypal.com"
+    : "https://api-m.sandbox.paypal.com";
+}
+
+async function paypalAccessToken(env) {
+  if (!env.PAYPAL_CLIENT_ID || !env.PAYPAL_CLIENT_SECRET) {
+    throw new Error("PayPal credentials are not configured.");
+  }
+
+  const auth = btoa(`${env.PAYPAL_CLIENT_ID}:${env.PAYPAL_CLIENT_SECRET}`);
+  const response = await fetch(`${paypalBase(env)}/v1/oauth2/token`, {
+    method: "POST",
+    headers: {
+      "authorization": `Basic ${auth}`,
+      "content-type": "application/x-www-form-urlencoded",
+      "accept": "application/json"
+    },
+    body: "grant_type=client_credentials"
+  });
+
+  const data = await response.json();
+  if (!response.ok || !data.access_token) {
+    console.error("PayPal token error", data);
+    throw new Error("Could not authenticate with PayPal.");
+  }
+  return data.access_token;
+}
+
+async function createPayPalOrder(env, origin, reservation) {
+  const accessToken = await paypalAccessToken(env);
+
+  const payload = {
+    intent: "CAPTURE",
+    purchase_units: [
+      {
+        reference_id: `claim-${reservation.id}`,
+        custom_id: String(reservation.id),
+        description: `ClaimTheHour — ${reservation.claim_date} ${labelForHourServer(reservation.claim_hour)}`,
+        amount: {
+          currency_code: "USD",
+          value: PRICE_USD
+        }
+      }
+    ],
+    application_context: {
+      brand_name: "ClaimTheHour",
+      landing_page: "LOGIN",
+      shipping_preference: "NO_SHIPPING",
+      user_action: "PAY_NOW",
+      return_url: `${origin}/api/paypal/return?reservation_id=${reservation.id}`,
+      cancel_url: `${origin}/?cancelled=1#board`
+    }
+  };
+
+  const response = await fetch(`${paypalBase(env)}/v2/checkout/orders`, {
+    method: "POST",
+    headers: {
+      "authorization": `Bearer ${accessToken}`,
+      "content-type": "application/json",
+      "accept": "application/json",
+      "prefer": "return=representation",
+      "PayPal-Request-Id": `claimthehour-${reservation.id}`
+    },
+    body: JSON.stringify(payload)
+  });
+
+  const data = await response.json();
+  if (!response.ok || !data.id) {
+    console.error("PayPal create order error", data);
+    throw new Error("Could not create PayPal order.");
+  }
+
+  const approval = (data.links || []).find(
+    link => link.rel === "approve" || link.rel === "payer-action"
+  );
+  if (!approval?.href) {
+    console.error("PayPal approval URL missing", data);
+    throw new Error("PayPal did not return an approval URL.");
+  }
+
+  return { id: data.id, approval_url: approval.href };
+}
+
+async function capturePayPalOrder(env, orderId) {
+  const accessToken = await paypalAccessToken(env);
+  const response = await fetch(
+    `${paypalBase(env)}/v2/checkout/orders/${encodeURIComponent(orderId)}/capture`,
+    {
+      method: "POST",
+      headers: {
+        "authorization": `Bearer ${accessToken}`,
+        "content-type": "application/json",
+        "accept": "application/json",
+        "prefer": "return=representation",
+        "PayPal-Request-Id": `capture-${orderId}`
+      },
+      body: "{}"
+    }
+  );
+
+  const data = await response.json();
+  if (!response.ok) {
+    console.error("PayPal capture error", data);
+    throw new Error("PayPal capture failed.");
+  }
+  return data;
 }
 
 async function cleanupExpiredPending(env, dateKey) {
@@ -98,6 +214,7 @@ async function reserveClaim(request, env) {
   }
 
   await cleanupExpiredPending(env, dateKey);
+  let reservationId = null;
 
   try {
     const result = await env.DB.prepare(`
@@ -106,18 +223,114 @@ async function reserveClaim(request, env) {
       ) VALUES (?, ?, ?, ?, ?, 'pending')
     `).bind(dateKey, hour, productName, productUrl, description).run();
 
+    reservationId = result.meta?.last_row_id;
+    if (!reservationId) throw new Error("Reservation ID missing.");
+
+    const order = await createPayPalOrder(env, new URL(request.url).origin, {
+      id: reservationId,
+      claim_date: dateKey,
+      claim_hour: hour
+    });
+
+    await env.DB.prepare(`
+      UPDATE claims
+      SET stripe_session_id = ?
+      WHERE id = ? AND payment_status = 'pending'
+    `).bind(order.id, reservationId).run();
+
     return json({
       ok: true,
-      reservation_id: result.meta?.last_row_id ?? null,
-      hold_minutes: HOLD_MINUTES,
-      message: `Reserved for ${HOLD_MINUTES} minutes. Stripe payment is the next step.`
+      reservation_id: reservationId,
+      paypal_order_id: order.id,
+      approval_url: order.approval_url,
+      hold_minutes: HOLD_MINUTES
     }, 201);
   } catch (error) {
+    if (reservationId) {
+      await env.DB.prepare(`
+        DELETE FROM claims
+        WHERE id = ? AND payment_status = 'pending'
+      `).bind(reservationId).run();
+    }
+
     const message = String(error?.message || error);
     if (message.includes("UNIQUE") || message.includes("constraint")) {
       return json({ ok: false, error: "That hour was just taken. Pick another spot." }, 409);
     }
-    return json({ ok: false, error: "Could not reserve this hour." }, 500);
+    console.error("Reservation / PayPal order error", error);
+    return json({ ok: false, error: "Could not start PayPal checkout. Please try again." }, 500);
+  }
+}
+
+async function handlePayPalReturn(request, env) {
+  const url = new URL(request.url);
+  const reservationId = Number(url.searchParams.get("reservation_id"));
+  const orderId = String(url.searchParams.get("token") || "");
+
+  if (!Number.isInteger(reservationId) || reservationId <= 0 || !orderId) {
+    return Response.redirect(`${url.origin}/?payment_error=1#board`, 303);
+  }
+
+  const reservation = await env.DB.prepare(`
+    SELECT id, claim_hour, payment_status, stripe_session_id
+    FROM claims
+    WHERE id = ?
+  `).bind(reservationId).first();
+
+  if (!reservation) {
+    return Response.redirect(`${url.origin}/?expired=1#board`, 303);
+  }
+  if (reservation.payment_status === "paid") {
+    return Response.redirect(`${url.origin}/?paid=1&hour=${reservation.claim_hour}#board`, 303);
+  }
+  if (reservation.payment_status !== "pending" || reservation.stripe_session_id !== orderId) {
+    return Response.redirect(`${url.origin}/?payment_error=1#board`, 303);
+  }
+
+  const active = await env.DB.prepare(`
+    SELECT CASE
+      WHEN datetime(created_at, '+${HOLD_MINUTES} minutes') > datetime('now')
+      THEN 1 ELSE 0
+    END AS active
+    FROM claims
+    WHERE id = ?
+  `).bind(reservationId).first();
+
+  if (!active?.active) {
+    await env.DB.prepare(`
+      DELETE FROM claims WHERE id = ? AND payment_status = 'pending'
+    `).bind(reservationId).run();
+    return Response.redirect(`${url.origin}/?expired=1#board`, 303);
+  }
+
+  try {
+    const captured = await capturePayPalOrder(env, orderId);
+    const capture = captured?.purchase_units?.[0]?.payments?.captures?.[0] || null;
+
+    const amountOk =
+      capture?.amount?.currency_code === "USD" &&
+      capture?.amount?.value === PRICE_USD;
+
+    if (captured?.status !== "COMPLETED" || !capture?.id || !amountOk) {
+      console.error("Unexpected PayPal capture response", captured);
+      return Response.redirect(`${url.origin}/?payment_error=1#board`, 303);
+    }
+
+    await env.DB.prepare(`
+      UPDATE claims
+      SET
+        payment_status = 'paid',
+        stripe_payment_intent_id = ?,
+        paid_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+        AND payment_status = 'pending'
+        AND stripe_session_id = ?
+    `).bind(capture.id, reservationId, orderId).run();
+
+    return Response.redirect(`${url.origin}/?paid=1&hour=${reservation.claim_hour}#board`, 303);
+  } catch (error) {
+    console.error("PayPal capture error", error);
+    return Response.redirect(`${url.origin}/?payment_error=1#board`, 303);
   }
 }
 
@@ -170,7 +383,7 @@ function html() {
     .spark{color:var(--amber)}
     h1{font-size:clamp(54px,8vw,92px);line-height:.92;letter-spacing:-.07em;margin:22px auto 18px;max-width:920px}
     .dot-end{color:#f5a30a}
-    .hero-copy{max-width:720px;margin:auto;color:#5c6069;font-size:18px;line-height:1.55}
+    .hero-copy{max-width:720px;margin:auto;color:#5c6069;font-size:18px;line-height:1.55}.status-banner{display:none;max-width:850px;margin:22px auto 0;padding:14px 18px;border-radius:14px;font-weight:800;font-size:14px}.status-banner.show{display:block}.status-banner.success{background:#effcf4;border:1px solid #b6e6c7;color:#16683a}.status-banner.warn{background:#fff7e7;border:1px solid #f0d090;color:#8a5a00}.status-banner.error{background:#fff0ef;border:1px solid #f0bab5;color:#9e2b22}
     .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:34px auto 16px;max-width:850px}
     .stat,.notice,.now-card{border:1px solid var(--line);background:var(--panel);backdrop-filter:blur(12px);border-radius:18px;box-shadow:var(--shadow)}
     .stat{padding:20px;display:flex;gap:14px;align-items:center;text-align:left}
@@ -205,7 +418,7 @@ function html() {
     .modal{position:fixed;inset:0;background:rgba(8,10,14,.55);display:none;place-items:center;padding:20px;z-index:20}.modal.open{display:grid}
     .modal-card{width:min(500px,100%);background:white;border-radius:24px;padding:28px;box-shadow:0 30px 80px rgba(0,0,0,.18)}.modal-card h3{font-size:30px;letter-spacing:-.04em;margin:12px 0 8px}.modal-card>p{color:var(--muted);line-height:1.55}
     .form{display:grid;gap:12px;margin-top:18px}.field{display:grid;gap:6px}.field label{font-size:12px;font-weight:900}.field input,.field textarea{width:100%;border:1px solid #dedbd4;border-radius:12px;padding:12px 13px;background:#fff}.field textarea{resize:vertical;min-height:82px}
-    .form-note{font-size:12px;color:var(--muted)}.form-error{font-size:13px;color:#b42318;min-height:18px}.modal-actions{display:flex;gap:10px;margin-top:8px}.modal-actions button{flex:1;border-radius:999px;padding:12px;border:1px solid #d9d9d9;background:#fff;font-weight:800;cursor:pointer}.modal-actions .primary{background:#111319;color:white;border-color:#111319}.modal-actions .primary:disabled{opacity:.55;cursor:wait}
+    .form-note{font-size:12px;color:var(--muted)}.form-error{font-size:13px;color:#b42318;min-height:18px}.modal-actions{display:flex;gap:10px;margin-top:8px}.modal-actions button{flex:1;border-radius:999px;padding:12px;border:1px solid #d9d9d9;background:#fff;font-weight:800;cursor:pointer}.modal-actions .primary{background:#0070ba;color:white;border-color:#0070ba}.modal-actions .primary:disabled{opacity:.55;cursor:wait}
     .success-box{display:none;background:#f1fff6;border:1px solid #b9e8ca;border-radius:14px;padding:14px;color:#186c3d;font-size:13px;line-height:1.5;margin-top:14px}
     @media(max-width:900px){.grid{grid-template-columns:repeat(4,1fr)}}
     @media(max-width:700px){nav a:not(.nav-cta){display:none}.hero{padding-top:48px}h1{font-size:56px}.stats{grid-template-columns:1fr}.live-row{grid-template-columns:1fr}.grid{grid-template-columns:repeat(2,1fr)}.steps{grid-template-columns:1fr}.board-head,.faq-top,.footer-row{align-items:flex-start;flex-direction:column}.legend{margin-top:10px}.footer-links{flex-wrap:wrap}}
@@ -223,6 +436,7 @@ function html() {
       <div class="pill"><span class="spark">✦</span> 24 HOURS. 24 SPOTS. ONE DAY.</div>
       <h1>Claim an hour of<br>the internet<span class="dot-end">.</span></h1>
       <p class="hero-copy">Pick an open hour, claim it for $1, and put your product in the spotlight.<br>Once an hour is claimed, it's gone for the day.</p>
+      <div id="statusBanner" class="status-banner"></div>
 
       <div class="stats">
         <div class="stat"><div class="ico">◷</div><div><small>TODAY'S DATE · UTC</small><strong id="todayDate">—</strong></div></div>
@@ -232,7 +446,7 @@ function html() {
 
       <div class="live-row">
         <div class="now-card"><span class="now-badge">NOW</span><div><small>CURRENT TIME · UTC</small><div class="now-time" id="utcTime">—</div></div></div>
-        <div class="notice"><div class="bolt">ϟ</div><div><strong>First come, first served</strong><span>Pending reservations are held for ${HOLD_MINUTES} minutes while checkout is completed.</span></div></div>
+        <div class="notice"><div class="bolt">ϟ</div><div><strong>First come, first served</strong><span>Your spot is held for ${HOLD_MINUTES} minutes while you complete PayPal checkout.</span></div></div>
       </div>
     </section>
 
@@ -248,8 +462,8 @@ function html() {
       <div class="section-label">HOW IT WORKS</div>
       <div class="steps">
         <div class="step"><div class="step-num">01</div><h3>Pick an hour</h3><p>Choose any open spot on today's UTC board.</p></div>
-        <div class="step"><div class="step-num">02</div><h3>Reserve it</h3><p>Add your product and hold the spot for ${HOLD_MINUTES} minutes while you complete checkout.</p></div>
-        <div class="step"><div class="step-num">03</div><h3>It's yours</h3><p>After payment, your product owns that hour and visitors can click through to your site.</p></div>
+        <div class="step"><div class="step-num">02</div><h3>Pay $1 with PayPal</h3><p>Your spot is held while you approve the $1 Sandbox payment.</p></div>
+        <div class="step"><div class="step-num">03</div><h3>It's yours</h3><p>After PayPal confirms payment, your product becomes the official owner of that hour.</p></div>
       </div>
     </section>
 
@@ -257,7 +471,7 @@ function html() {
       <div class="faq-top"><h2>FAQ</h2><span style="color:var(--muted);font-size:13px">Simple rules. No auction.</span></div>
       <details><summary>What am I buying?</summary><p>A one-hour promotional position on ClaimTheHour's UTC board for the selected date.</p></details>
       <details><summary>Can someone take my hour?</summary><p>No after payment is confirmed. Before payment, a new reservation is temporarily held for ${HOLD_MINUTES} minutes.</p></details>
-      <details><summary>Why UTC?</summary><p>ClaimTheHour is global. UTC gives every visitor one unambiguous daily board and reset time.</p></details>
+      <details><summary>Is this real money right now?</summary><p>This build uses PayPal Sandbox, so the checkout is a test and does not charge real money.</p></details>
     </section>
   </main>
 </div>
@@ -266,17 +480,16 @@ function html() {
 
 <div class="modal" id="modal">
   <div class="modal-card">
-    <div class="pill">CLAIM A SPOT</div>
+    <div class="pill">PAYPAL SANDBOX</div>
     <h3>Claim <span id="selectedHour"></span></h3>
-    <p>Tell us what you want to feature. This build saves a ${HOLD_MINUTES}-minute reservation to D1; Stripe checkout is the next step.</p>
+    <p>Enter your product, then continue to PayPal Sandbox to approve the $1 test payment.</p>
     <form class="form" id="claimForm">
       <div class="field"><label for="productName">Product name</label><input id="productName" name="product_name" maxlength="60" required placeholder="Your product"></div>
       <div class="field"><label for="productUrl">Product URL</label><input id="productUrl" name="product_url" type="url" required placeholder="https://example.com"></div>
       <div class="field"><label for="description">Short description</label><textarea id="description" name="description" maxlength="120" placeholder="What does your product do?"></textarea></div>
-      <div class="form-note">No payment is taken in this build. The next release will send this reservation to Stripe Checkout.</div>
+      <div class="form-note">Sandbox only: no real money will be charged.</div>
       <div class="form-error" id="formError"></div>
-      <div class="success-box" id="successBox"></div>
-      <div class="modal-actions"><button type="button" id="closeModal">Cancel</button><button type="submit" class="primary" id="reserveBtn">Reserve hour</button></div>
+      <div class="modal-actions"><button type="button" id="closeModal">Cancel</button><button type="submit" class="primary" id="reserveBtn">Continue to PayPal — $1</button></div>
     </form>
   </div>
 </div>
@@ -287,7 +500,6 @@ function html() {
   const modal = document.getElementById('modal');
   const form = document.getElementById('claimForm');
   const formError = document.getElementById('formError');
-  const successBox = document.getElementById('successBox');
   const reserveBtn = document.getElementById('reserveBtn');
 
   function dateKeyUTC(){
@@ -297,6 +509,24 @@ function html() {
   function labelForHour(hour){
     const h = hour % 12 || 12;
     return h + ' ' + (hour < 12 ? 'AM' : 'PM');
+  }
+
+  function showStatusFromUrl(){
+    const params = new URLSearchParams(location.search);
+    const banner = document.getElementById('statusBanner');
+    if(params.get('paid') === '1'){
+      banner.className='status-banner show success';
+      banner.textContent='Payment confirmed. Your hour is officially claimed.';
+    } else if(params.get('cancelled') === '1'){
+      banner.className='status-banner show warn';
+      banner.textContent='PayPal checkout was cancelled. The temporary hold will expire automatically.';
+    } else if(params.get('expired') === '1'){
+      banner.className='status-banner show warn';
+      banner.textContent='That temporary reservation expired before payment was captured.';
+    } else if(params.get('payment_error') === '1'){
+      banner.className='status-banner show error';
+      banner.textContent='PayPal could not confirm the payment. No claim was activated.';
+    }
   }
 
   function updateClock(){
@@ -342,7 +572,7 @@ function html() {
       '<div class="slot-top"><strong>' + labelForHour(claim.claim_hour) + '</strong><span class="dot"></span></div>' +
       '<span class="availability">' + (isPaid ? 'CLAIMED' : 'HELD') + '</span>' +
       '<p><strong>' + safeName + '</strong><br>' + (safeDesc || (isPaid ? 'Owns this hour.' : 'Checkout pending.')) + '</p>' +
-      (isPaid ? '<a class="visit-btn" href="' + safeUrl + '" target="_blank" rel="noopener noreferrer">Visit ↗</a>' : '<span class="form-note">Reserved for checkout</span>');
+      (isPaid ? '<a class="visit-btn" href="' + safeUrl + '" target="_blank" rel="noopener noreferrer">Visit ↗</a>' : '<span class="form-note">PayPal checkout pending</span>');
   }
 
   async function loadBoard(){
@@ -365,8 +595,8 @@ function html() {
       btn.addEventListener('click',()=>{
         selectedHour = Number(btn.dataset.hour);
         document.getElementById('selectedHour').textContent = btn.dataset.label;
-        form.reset(); formError.textContent=''; successBox.style.display='none'; successBox.textContent='';
-        reserveBtn.disabled=false; reserveBtn.textContent='Reserve hour';
+        form.reset(); formError.textContent='';
+        reserveBtn.disabled=false; reserveBtn.textContent='Continue to PayPal — $1';
         modal.classList.add('open');
       });
     });
@@ -378,8 +608,8 @@ function html() {
   form.addEventListener('submit', async e=>{
     e.preventDefault();
     if(selectedHour === null) return;
-    formError.textContent=''; successBox.style.display='none';
-    reserveBtn.disabled=true; reserveBtn.textContent='Reserving…';
+    formError.textContent='';
+    reserveBtn.disabled=true; reserveBtn.textContent='Opening PayPal…';
 
     const payload = {
       claim_date: dateKeyUTC(),
@@ -396,17 +626,16 @@ function html() {
         body:JSON.stringify(payload)
       });
       const data = await response.json();
-      if(!response.ok) throw new Error(data.error || 'Reservation failed.');
-      successBox.textContent = data.message;
-      successBox.style.display='block';
-      reserveBtn.textContent='Reserved';
-      await loadBoard();
+      if(!response.ok) throw new Error(data.error || 'Could not start checkout.');
+      if(!data.approval_url) throw new Error('PayPal approval URL missing.');
+      window.location.href = data.approval_url;
     }catch(error){
       formError.textContent=error.message;
-      reserveBtn.disabled=false; reserveBtn.textContent='Reserve hour';
+      reserveBtn.disabled=false; reserveBtn.textContent='Continue to PayPal — $1';
     }
   });
 
+  showStatusFromUrl();
   updateClock();
   setInterval(updateClock,1000);
   loadBoard();
@@ -422,9 +651,9 @@ export default {
     if (url.pathname === "/health") {
       try {
         const row = await env.DB.prepare("SELECT 1 AS ok").first();
-        return json({ ok: row?.ok === 1, service: "claimthehour", version: "1.2", d1: true });
+        return json({ ok: row?.ok === 1, service: "claimthehour", version: "1.3", d1: true, paypal_env: env.PAYPAL_ENV || "sandbox", paypal_configured: Boolean(env.PAYPAL_CLIENT_ID && env.PAYPAL_CLIENT_SECRET) });
       } catch {
-        return json({ ok: false, service: "claimthehour", version: "1.2", d1: false }, 500);
+        return json({ ok: false, service: "claimthehour", version: "1.3", d1: false }, 500);
       }
     }
 
@@ -441,6 +670,10 @@ export default {
 
     if (url.pathname === "/api/reserve" && request.method === "POST") {
       return reserveClaim(request, env);
+    }
+
+    if (url.pathname === "/api/paypal/return" && request.method === "GET") {
+      return handlePayPalReturn(request, env);
     }
 
     if (request.method !== "GET" && request.method !== "HEAD") {
