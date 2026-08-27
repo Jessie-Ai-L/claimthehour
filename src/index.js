@@ -957,7 +957,7 @@ function html() {
       <div class="faq-top"><h2>FAQ</h2><span style="color:var(--muted);font-size:13px">Simple rules. No auction.</span></div>
       <details><summary>What am I buying?</summary><p>A one-hour promotional position on ClaimTheHour's UTC board for the selected date.</p></details>
       <details><summary>Can someone take my hour?</summary><p>No after payment is confirmed. Before payment, a new reservation is temporarily held for ${HOLD_MINUTES} minutes.</p></details>
-      <details><summary>Is this real money right now?</summary><p>This build uses PayPal Sandbox, so the checkout is a test and does not charge real money.</p></details>
+      <details><summary>Is this real money right now?</summary><p>Yes. ClaimTheHour uses live PayPal payments. Claiming an hour costs $1 USD, and successful payments are real transactions.</p></details>
     </section>
   </main>
 </div>
@@ -966,12 +966,12 @@ function html() {
   <div class="modal-card">
     <div class="pill">PAYPAL SANDBOX</div>
     <h3>Claim <span id="selectedHour"></span></h3>
-    <p>Enter your product, then continue to PayPal Sandbox to approve the $1 test payment.</p>
+    <p>Enter your product, then continue to PayPal to approve the $1 payment.</p>
     <form class="form" id="claimForm">
       <div class="field"><label for="productName">Product name</label><input id="productName" name="product_name" maxlength="60" required placeholder="Your product"></div>
       <div class="field"><label for="productUrl">Product URL</label><input id="productUrl" name="product_url" type="url" required placeholder="https://example.com"></div>
       <div class="field"><label for="description">Short description</label><textarea id="description" name="description" maxlength="120" placeholder="What does your product do?"></textarea></div>
-      <div class="form-note">Sandbox only: no real money will be charged.</div>
+      <div class="form-note">Secure checkout powered by PayPal.</div>
       <div class="form-error" id="formError"></div>
       <div class="modal-actions"><button type="button" id="closeModal">Cancel</button><button type="submit" class="primary" id="reserveBtn">Continue to PayPal — $1</button></div>
     </form>
@@ -1190,9 +1190,9 @@ export default {
     if (url.pathname === "/health") {
       try {
         const row = await env.DB.prepare("SELECT 1 AS ok").first();
-        return json({ ok: row?.ok === 1, service: "claimthehour", version: "1.6.1", d1: true, paypal_env: env.PAYPAL_ENV || "sandbox", paypal_configured: Boolean(env.PAYPAL_CLIENT_ID && env.PAYPAL_CLIENT_SECRET), webhook_configured: Boolean(env.PAYPAL_WEBHOOK_ID) });
+        return json({ ok: row?.ok === 1, service: "claimthehour", version: "1.6.2", d1: true, paypal_env: env.PAYPAL_ENV || "sandbox", paypal_configured: Boolean(env.PAYPAL_CLIENT_ID && env.PAYPAL_CLIENT_SECRET), webhook_configured: Boolean(env.PAYPAL_WEBHOOK_ID) });
       } catch {
-        return json({ ok: false, service: "claimthehour", version: "1.6.1", d1: false }, 500);
+        return json({ ok: false, service: "claimthehour", version: "1.6.2", d1: false }, 500);
       }
     }
 
