@@ -807,7 +807,80 @@ function html() {
     .success-box{display:none;background:#f1fff6;border:1px solid #b9e8ca;border-radius:14px;padding:14px;color:#186c3d;font-size:13px;line-height:1.5;margin-top:14px}
     @media(max-width:900px){.grid{grid-template-columns:repeat(4,1fr)}}
     @media(max-width:700px){nav a:not(.nav-cta){display:none}.hero{padding-top:48px}h1{font-size:56px}.stats{grid-template-columns:1fr}.live-row{grid-template-columns:1fr}.grid{grid-template-columns:repeat(2,1fr)}.steps{grid-template-columns:1fr}.board-head,.faq-top,.footer-row{align-items:flex-start;flex-direction:column}.legend{margin-top:10px}.footer-links{flex-wrap:wrap}}
-  </style>
+  
+.launch-facts{
+  max-width:1180px;
+  margin:42px auto 76px;
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:14px;
+  padding:0 0;
+}
+.launch-fact{
+  background:rgba(255,255,255,.86);
+  border:1px solid #e8dfd4;
+  border-radius:18px;
+  padding:18px 20px;
+  box-shadow:0 8px 28px rgba(20,20,20,.04);
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+}
+.launch-fact strong{
+  font-size:24px;
+  line-height:1.1;
+  letter-spacing:-.03em;
+  color:#111318;
+}
+.launch-fact span{
+  font-size:13px;
+  line-height:1.35;
+  color:#727780;
+}
+.launch-footer{
+  max-width:1180px;
+  margin:72px auto 0;
+  padding:30px 0 40px;
+  border-top:1px solid #e7dfd4;
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:24px;
+  flex-wrap:wrap;
+  color:#6f737b;
+  font-size:14px;
+}
+.launch-footer-brand{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+}
+.launch-footer-brand strong{
+  color:#111318;
+  font-size:16px;
+}
+.launch-footer nav{
+  display:flex;
+  gap:18px;
+  flex-wrap:wrap;
+  align-items:center;
+  justify-content:flex-end;
+}
+.launch-footer a{
+  color:inherit;
+  text-decoration:none;
+}
+.launch-footer a:hover{text-decoration:underline}
+@media(max-width:820px){
+  .launch-facts{grid-template-columns:repeat(2,minmax(0,1fr));margin:30px auto 58px}
+  .launch-footer{flex-direction:column}
+  .launch-footer nav{justify-content:flex-start}
+}
+@media(max-width:520px){
+  .launch-facts{grid-template-columns:1fr}
+}
+
+</style>
 </head>
 <body>
 <div class="wrap">
@@ -844,11 +917,12 @@ function html() {
     </section>
 
     
-<section class="trust-strip" aria-label="ClaimTheHour facts">
-  <div><strong>24</strong><span>daily spots</span></div>
-  <div><strong>$1</strong><span>flat claim price</span></div>
-  <div><strong>UTC</strong><span>one global clock</span></div>
-  <div><strong>15 min</strong><span>checkout hold</span></div>
+
+<section class="launch-facts" aria-label="ClaimTheHour facts">
+  <div class="launch-fact"><strong>24</strong><span>daily spots</span></div>
+  <div class="launch-fact"><strong>$1</strong><span>flat claim price</span></div>
+  <div class="launch-fact"><strong>UTC</strong><span>one global clock</span></div>
+  <div class="launch-fact"><strong>15 min</strong><span>checkout hold</span></div>
 </section>
 
 <section class="how" id="how">
@@ -1038,8 +1112,9 @@ function html() {
 </script>
 
 
-<footer class="site-footer">
-  <div class="footer-brand">
+
+<footer class="launch-footer">
+  <div class="launch-footer-brand">
     <strong>ClaimTheHour</strong>
     <span>24 hours. 24 spots. Claim yours.</span>
   </div>
@@ -1066,9 +1141,9 @@ export default {
     if (url.pathname === "/health") {
       try {
         const row = await env.DB.prepare("SELECT 1 AS ok").first();
-        return json({ ok: row?.ok === 1, service: "claimthehour", version: "1.5.1", d1: true, paypal_env: env.PAYPAL_ENV || "sandbox", paypal_configured: Boolean(env.PAYPAL_CLIENT_ID && env.PAYPAL_CLIENT_SECRET), webhook_configured: Boolean(env.PAYPAL_WEBHOOK_ID) });
+        return json({ ok: row?.ok === 1, service: "claimthehour", version: "1.5.2", d1: true, paypal_env: env.PAYPAL_ENV || "sandbox", paypal_configured: Boolean(env.PAYPAL_CLIENT_ID && env.PAYPAL_CLIENT_SECRET), webhook_configured: Boolean(env.PAYPAL_WEBHOOK_ID) });
       } catch {
-        return json({ ok: false, service: "claimthehour", version: "1.5.1", d1: false }, 500);
+        return json({ ok: false, service: "claimthehour", version: "1.5.2", d1: false }, 500);
       }
     }
 

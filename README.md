@@ -1,12 +1,12 @@
-# ClaimTheHour V1.5.1 — UI cleanup
+# ClaimTheHour V1.5.2 — UI cleanup
 
-This patch is intentionally narrow and does not change payment, D1, hold, or webhook logic.
+Built directly from the uploaded V1.5.1 ZIP.
 
-Fixes:
-- Rebuilds the 24 / $1 / UTC / 15 min facts strip as responsive cards
-- Removes duplicate footer output
-- Keeps one polished footer
-- Adds Privacy, Terms, Refunds, and Contact links to that footer
-- Improves mobile behavior for the facts strip and footer
+This patch:
+- uses brand-new CSS class names to avoid collisions
+- renders the 24 / $1 / UTC / 15 min facts as real responsive cards
+- removes duplicate custom footers
+- adds one single footer with Privacy, Terms, Refunds, and Contact
+- does not change PayPal, D1, hold, claim, or webhook business logic
 
 No database migration is required.
