@@ -181,6 +181,208 @@ async function capturePayPalOrder(env, orderId) {
   return data;
 }
 
+
+async function verifyPayPalWebhook(request, env, rawBody) {
+  if (!env.PAYPAL_WEBHOOK_ID) {
+    throw new Error("PAYPAL_WEBHOOK_ID is not configured.");
+  }
+
+  const accessToken = await paypalAccessToken(env);
+
+  const authAlgo = request.headers.get("paypal-auth-algo");
+  const certUrl = request.headers.get("paypal-cert-url");
+  const transmissionId = request.headers.get("paypal-transmission-id");
+  const transmissionSig = request.headers.get("paypal-transmission-sig");
+  const transmissionTime = request.headers.get("paypal-transmission-time");
+
+  if (
+    !authAlgo ||
+    !certUrl ||
+    !transmissionId ||
+    !transmissionSig ||
+    !transmissionTime
+  ) {
+    return false;
+  }
+
+  // Preserve the webhook event JSON exactly as received while building
+  // the verification request required by PayPal.
+  const verificationBody =
+    `{"auth_algo":${JSON.stringify(authAlgo)},` +
+    `"cert_url":${JSON.stringify(certUrl)},` +
+    `"transmission_id":${JSON.stringify(transmissionId)},` +
+    `"transmission_sig":${JSON.stringify(transmissionSig)},` +
+    `"transmission_time":${JSON.stringify(transmissionTime)},` +
+    `"webhook_id":${JSON.stringify(env.PAYPAL_WEBHOOK_ID)},` +
+    `"webhook_event":${rawBody}}`;
+
+  const response = await fetch(
+    `${paypalBase(env)}/v1/notifications/verify-webhook-signature`,
+    {
+      method: "POST",
+      headers: {
+        "authorization": `Bearer ${accessToken}`,
+        "content-type": "application/json",
+        "accept": "application/json"
+      },
+      body: verificationBody
+    }
+  );
+
+  const data = await response.json();
+  if (!response.ok) {
+    console.error("PayPal webhook verification API error", data);
+    return false;
+  }
+
+  return data.verification_status === "SUCCESS";
+}
+
+async function markClaimPaidFromCapture(env, orderId, capture) {
+  if (
+    !orderId ||
+    capture?.status !== "COMPLETED" ||
+    !capture?.id ||
+    capture?.amount?.currency_code !== "USD" ||
+    capture?.amount?.value !== PRICE_USD
+  ) {
+    return { ok: false, reason: "capture_not_valid" };
+  }
+
+  const result = await env.DB.prepare(`
+    UPDATE claims
+    SET
+      payment_status = 'paid',
+      stripe_payment_intent_id = ?,
+      paid_at = COALESCE(paid_at, CURRENT_TIMESTAMP)
+    WHERE stripe_session_id = ?
+      AND payment_status = 'pending'
+  `).bind(capture.id, orderId).run();
+
+  if ((result.meta?.changes || 0) === 1) {
+    return { ok: true, changed: true };
+  }
+
+  const existing = await env.DB.prepare(`
+    SELECT id, payment_status, stripe_payment_intent_id
+    FROM claims
+    WHERE stripe_session_id = ?
+  `).bind(orderId).first();
+
+  if (
+    existing?.payment_status === "paid" &&
+    (!existing.stripe_payment_intent_id ||
+      existing.stripe_payment_intent_id === capture.id)
+  ) {
+    if (!existing.stripe_payment_intent_id) {
+      await env.DB.prepare(`
+        UPDATE claims
+        SET stripe_payment_intent_id = ?, paid_at = COALESCE(paid_at, CURRENT_TIMESTAMP)
+        WHERE id = ?
+      `).bind(capture.id, existing.id).run();
+    }
+    return { ok: true, changed: false };
+  }
+
+  return { ok: false, reason: "claim_not_found_or_not_pending" };
+}
+
+async function handlePayPalWebhook(request, env) {
+  const rawBody = await request.text();
+
+  let event;
+  try {
+    event = JSON.parse(rawBody);
+  } catch {
+    return new Response("Invalid JSON", { status: 400 });
+  }
+
+  let verified = false;
+  try {
+    verified = await verifyPayPalWebhook(request, env, rawBody);
+  } catch (error) {
+    console.error("Webhook verification error", error);
+    return new Response("Webhook verification unavailable", { status: 503 });
+  }
+
+  if (!verified) {
+    return new Response("Invalid webhook signature", { status: 401 });
+  }
+
+  try {
+    if (event.event_type === "CHECKOUT.ORDER.APPROVED") {
+      const orderId = String(event?.resource?.id || "");
+      if (!orderId) return new Response("OK", { status: 200 });
+
+      const claim = await env.DB.prepare(`
+        SELECT id, payment_status, stripe_session_id
+        FROM claims
+        WHERE stripe_session_id = ?
+      `).bind(orderId).first();
+
+      if (!claim || claim.payment_status === "paid") {
+        return new Response("OK", { status: 200 });
+      }
+
+      // Re-read the order from PayPal before capture. This prevents trusting
+      // webhook payload fields alone for amount, currency, or reservation ID.
+      const order = await getPayPalOrder(env, orderId);
+      const unit = order?.purchase_units?.[0];
+      const amountOk =
+        unit?.amount?.currency_code === "USD" &&
+        unit?.amount?.value === PRICE_USD;
+      const reservationMatches =
+        String(unit?.custom_id || "") === String(claim.id);
+
+      if (
+        order?.status !== "APPROVED" ||
+        !amountOk ||
+        !reservationMatches
+      ) {
+        console.error("Approved webhook order verification failed", {
+          orderId,
+          status: order?.status,
+          amountOk,
+          reservationMatches
+        });
+        return new Response("OK", { status: 200 });
+      }
+
+      const captured = await capturePayPalOrder(env, orderId);
+      const capture =
+        captured?.purchase_units?.[0]?.payments?.captures?.[0] || null;
+
+      await markClaimPaidFromCapture(env, orderId, capture);
+      return new Response("OK", { status: 200 });
+    }
+
+    if (event.event_type === "PAYMENT.CAPTURE.COMPLETED") {
+      const capture = event?.resource || null;
+      const orderId = String(
+        capture?.supplementary_data?.related_ids?.order_id || ""
+      );
+
+      await markClaimPaidFromCapture(env, orderId, capture);
+      return new Response("OK", { status: 200 });
+    }
+
+    if (
+      event.event_type === "PAYMENT.CAPTURE.DENIED" ||
+      event.event_type === "CHECKOUT.PAYMENT-APPROVAL.REVERSED"
+    ) {
+      // Do not claim the hour. Keep it pending until the normal 15-minute
+      // expiry releases it.
+      return new Response("OK", { status: 200 });
+    }
+
+    return new Response("OK", { status: 200 });
+  } catch (error) {
+    console.error("PayPal webhook processing error", error);
+    // Return 500 so PayPal can retry transient processing failures.
+    return new Response("Webhook processing failed", { status: 500 });
+  }
+}
+
 async function cleanupExpiredPending(env, dateKey) {
   await env.DB.prepare(`
     DELETE FROM claims
@@ -336,25 +538,48 @@ async function handlePayPalReturn(request, env) {
   }
 
   try {
-    // Critical safeguard:
-    // Returning from PayPal is NOT enough. The order must explicitly be APPROVED.
+    // Returning from PayPal is not sufficient by itself.
+    // Re-read the order and verify amount/reservation before any capture.
     const order = await getPayPalOrder(env, orderId);
-
-    const orderAmount = order?.purchase_units?.[0]?.amount;
+    const unit = order?.purchase_units?.[0];
     const amountOk =
-      orderAmount?.currency_code === "USD" &&
-      orderAmount?.value === PRICE_USD;
-
+      unit?.amount?.currency_code === "USD" &&
+      unit?.amount?.value === PRICE_USD;
     const reservationMatches =
-      String(order?.purchase_units?.[0]?.custom_id || "") === String(reservationId);
+      String(unit?.custom_id || "") === String(reservationId);
 
-    if (order?.status !== "APPROVED" || !amountOk || !reservationMatches) {
-      console.warn("PayPal order not approved; leaving reservation pending", {
-        orderId,
-        status: order?.status,
-        reservationId
-      });
+    if (!amountOk || !reservationMatches) {
+      return Response.redirect(`${url.origin}/?payment_error=1#board`, 303);
+    }
 
+    // The webhook may have captured the order before the browser returns.
+    if (order?.status === "COMPLETED") {
+      const capture =
+        unit?.payments?.captures?.find(c => c?.status === "COMPLETED") || null;
+
+      const reconciled = await markClaimPaidFromCapture(env, orderId, capture);
+      if (reconciled.ok) {
+        return Response.redirect(
+          `${url.origin}/?paid=1&hour=${reservation.claim_hour}#board`,
+          303
+        );
+      }
+
+      const latest = await env.DB.prepare(`
+        SELECT payment_status FROM claims WHERE id = ?
+      `).bind(reservationId).first();
+
+      if (latest?.payment_status === "paid") {
+        return Response.redirect(
+          `${url.origin}/?paid=1&hour=${reservation.claim_hour}#board`,
+          303
+        );
+      }
+
+      return Response.redirect(`${url.origin}/?payment_error=1#board`, 303);
+    }
+
+    if (order?.status !== "APPROVED") {
       return Response.redirect(
         `${url.origin}/?not_approved=1&hour=${reservation.claim_hour}#board`,
         303
@@ -365,38 +590,15 @@ async function handlePayPalReturn(request, env) {
     const capture =
       captured?.purchase_units?.[0]?.payments?.captures?.[0] || null;
 
-    const captureAmountOk =
-      capture?.amount?.currency_code === "USD" &&
-      capture?.amount?.value === PRICE_USD;
+    const reconciled = await markClaimPaidFromCapture(env, orderId, capture);
+    if (!reconciled.ok) {
+      const latest = await env.DB.prepare(`
+        SELECT payment_status FROM claims WHERE id = ?
+      `).bind(reservationId).first();
 
-    if (
-      captured?.status !== "COMPLETED" ||
-      capture?.status !== "COMPLETED" ||
-      !capture?.id ||
-      !captureAmountOk
-    ) {
-      console.error("Unexpected PayPal capture response", captured);
-      return Response.redirect(`${url.origin}/?payment_error=1#board`, 303);
-    }
-
-    const update = await env.DB.prepare(`
-      UPDATE claims
-      SET
-        payment_status = 'paid',
-        stripe_payment_intent_id = ?,
-        paid_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-        AND payment_status = 'pending'
-        AND stripe_session_id = ?
-    `).bind(capture.id, reservationId, orderId).run();
-
-    if ((update.meta?.changes || 0) !== 1) {
-      console.error("Claim payment update was not applied", {
-        reservationId,
-        orderId,
-        captureId: capture.id
-      });
-      return Response.redirect(`${url.origin}/?payment_error=1#board`, 303);
+      if (latest?.payment_status !== "paid") {
+        return Response.redirect(`${url.origin}/?payment_error=1#board`, 303);
+      }
     }
 
     return Response.redirect(
@@ -729,9 +931,9 @@ export default {
     if (url.pathname === "/health") {
       try {
         const row = await env.DB.prepare("SELECT 1 AS ok").first();
-        return json({ ok: row?.ok === 1, service: "claimthehour", version: "1.3.1", d1: true, paypal_env: env.PAYPAL_ENV || "sandbox", paypal_configured: Boolean(env.PAYPAL_CLIENT_ID && env.PAYPAL_CLIENT_SECRET) });
+        return json({ ok: row?.ok === 1, service: "claimthehour", version: "1.4", d1: true, paypal_env: env.PAYPAL_ENV || "sandbox", paypal_configured: Boolean(env.PAYPAL_CLIENT_ID && env.PAYPAL_CLIENT_SECRET), webhook_configured: Boolean(env.PAYPAL_WEBHOOK_ID) });
       } catch {
-        return json({ ok: false, service: "claimthehour", version: "1.3.1", d1: false }, 500);
+        return json({ ok: false, service: "claimthehour", version: "1.4", d1: false }, 500);
       }
     }
 
@@ -752,6 +954,10 @@ export default {
 
     if (url.pathname === "/api/paypal/return" && request.method === "GET") {
       return handlePayPalReturn(request, env);
+    }
+
+    if (url.pathname === "/api/paypal/webhook" && request.method === "POST") {
+      return handlePayPalWebhook(request, env);
     }
 
     if (request.method !== "GET" && request.method !== "HEAD") {

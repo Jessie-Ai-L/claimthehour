@@ -1,34 +1,41 @@
-# ClaimTheHour V1.3.1 — PayPal Sandbox cancellation safeguard
+# ClaimTheHour V1.4 — PayPal Sandbox Webhooks
 
-This patch fixes the payment-state issue found during cancellation testing.
+This build keeps the validated PayPal Sandbox return/capture flow and adds a signed webhook endpoint:
 
-## Critical change
+`POST https://claimthehour.com/api/paypal/webhook`
 
-A redirect back from PayPal is no longer treated as sufficient evidence of payment approval.
+## Webhook events to subscribe
 
-Before Capture, the Worker now retrieves the PayPal order and requires:
+- `CHECKOUT.ORDER.APPROVED`
+- `PAYMENT.CAPTURE.COMPLETED`
+- `PAYMENT.CAPTURE.DENIED`
+- `CHECKOUT.PAYMENT-APPROVAL.REVERSED`
 
-- PayPal order status = `APPROVED`
-- amount = `1.00`
-- currency = `USD`
-- `custom_id` matches the D1 reservation ID
+## Why ORDER.APPROVED matters
 
-Only then will the Worker call PayPal Capture.
+If the buyer approves PayPal and closes the browser before returning to ClaimTheHour,
+the webhook can still capture the approved order server-side.
 
-After Capture, the Worker additionally requires:
+`PAYMENT.CAPTURE.COMPLETED` then acts as a final reconciliation path.
 
-- order status = `COMPLETED`
-- capture status = `COMPLETED`
-- captured amount = `1.00 USD`
+## Security
 
-Only after all checks pass does D1 change from `pending` to `paid`.
+Every webhook is verified with PayPal's
+`/v1/notifications/verify-webhook-signature` endpoint before processing.
 
-If approval is missing, the D1 claim remains `pending`/HELD and will expire under the normal 15-minute cleanup rule.
-
-## Required Cloudflare runtime variables
+The Worker requires these Cloudflare runtime variables:
 
 - `PAYPAL_CLIENT_ID`
 - `PAYPAL_CLIENT_SECRET`
 - `PAYPAL_ENV=sandbox`
+- `PAYPAL_WEBHOOK_ID` (add this after creating the Sandbox webhook)
 
-No D1 migration is required.
+## Idempotency
+
+Duplicate webhooks are safe:
+- capture uses the same PayPal request id per order
+- D1 only transitions `pending -> paid`
+- already-paid claims are treated as successful no-ops
+
+## No D1 migration required
+The existing schema remains compatible with this Sandbox build.
