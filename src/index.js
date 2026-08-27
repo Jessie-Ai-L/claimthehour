@@ -134,6 +134,28 @@ async function createPayPalOrder(env, origin, reservation) {
   return { id: data.id, approval_url: approval.href };
 }
 
+
+async function getPayPalOrder(env, orderId) {
+  const accessToken = await paypalAccessToken(env);
+  const response = await fetch(
+    `${paypalBase(env)}/v2/checkout/orders/${encodeURIComponent(orderId)}`,
+    {
+      method: "GET",
+      headers: {
+        "authorization": `Bearer ${accessToken}`,
+        "accept": "application/json"
+      }
+    }
+  );
+
+  const data = await response.json();
+  if (!response.ok) {
+    console.error("PayPal get order error", data);
+    throw new Error("Could not verify PayPal order.");
+  }
+  return data;
+}
+
 async function capturePayPalOrder(env, orderId) {
   const accessToken = await paypalAccessToken(env);
   const response = await fetch(
@@ -280,10 +302,18 @@ async function handlePayPalReturn(request, env) {
   if (!reservation) {
     return Response.redirect(`${url.origin}/?expired=1#board`, 303);
   }
+
   if (reservation.payment_status === "paid") {
-    return Response.redirect(`${url.origin}/?paid=1&hour=${reservation.claim_hour}#board`, 303);
+    return Response.redirect(
+      `${url.origin}/?paid=1&hour=${reservation.claim_hour}#board`,
+      303
+    );
   }
-  if (reservation.payment_status !== "pending" || reservation.stripe_session_id !== orderId) {
+
+  if (
+    reservation.payment_status !== "pending" ||
+    reservation.stripe_session_id !== orderId
+  ) {
     return Response.redirect(`${url.origin}/?payment_error=1#board`, 303);
   }
 
@@ -298,25 +328,58 @@ async function handlePayPalReturn(request, env) {
 
   if (!active?.active) {
     await env.DB.prepare(`
-      DELETE FROM claims WHERE id = ? AND payment_status = 'pending'
+      DELETE FROM claims
+      WHERE id = ? AND payment_status = 'pending'
     `).bind(reservationId).run();
+
     return Response.redirect(`${url.origin}/?expired=1#board`, 303);
   }
 
   try {
-    const captured = await capturePayPalOrder(env, orderId);
-    const capture = captured?.purchase_units?.[0]?.payments?.captures?.[0] || null;
+    // Critical safeguard:
+    // Returning from PayPal is NOT enough. The order must explicitly be APPROVED.
+    const order = await getPayPalOrder(env, orderId);
 
+    const orderAmount = order?.purchase_units?.[0]?.amount;
     const amountOk =
+      orderAmount?.currency_code === "USD" &&
+      orderAmount?.value === PRICE_USD;
+
+    const reservationMatches =
+      String(order?.purchase_units?.[0]?.custom_id || "") === String(reservationId);
+
+    if (order?.status !== "APPROVED" || !amountOk || !reservationMatches) {
+      console.warn("PayPal order not approved; leaving reservation pending", {
+        orderId,
+        status: order?.status,
+        reservationId
+      });
+
+      return Response.redirect(
+        `${url.origin}/?not_approved=1&hour=${reservation.claim_hour}#board`,
+        303
+      );
+    }
+
+    const captured = await capturePayPalOrder(env, orderId);
+    const capture =
+      captured?.purchase_units?.[0]?.payments?.captures?.[0] || null;
+
+    const captureAmountOk =
       capture?.amount?.currency_code === "USD" &&
       capture?.amount?.value === PRICE_USD;
 
-    if (captured?.status !== "COMPLETED" || !capture?.id || !amountOk) {
+    if (
+      captured?.status !== "COMPLETED" ||
+      capture?.status !== "COMPLETED" ||
+      !capture?.id ||
+      !captureAmountOk
+    ) {
       console.error("Unexpected PayPal capture response", captured);
       return Response.redirect(`${url.origin}/?payment_error=1#board`, 303);
     }
 
-    await env.DB.prepare(`
+    const update = await env.DB.prepare(`
       UPDATE claims
       SET
         payment_status = 'paid',
@@ -327,9 +390,21 @@ async function handlePayPalReturn(request, env) {
         AND stripe_session_id = ?
     `).bind(capture.id, reservationId, orderId).run();
 
-    return Response.redirect(`${url.origin}/?paid=1&hour=${reservation.claim_hour}#board`, 303);
+    if ((update.meta?.changes || 0) !== 1) {
+      console.error("Claim payment update was not applied", {
+        reservationId,
+        orderId,
+        captureId: capture.id
+      });
+      return Response.redirect(`${url.origin}/?payment_error=1#board`, 303);
+    }
+
+    return Response.redirect(
+      `${url.origin}/?paid=1&hour=${reservation.claim_hour}#board`,
+      303
+    );
   } catch (error) {
-    console.error("PayPal capture error", error);
+    console.error("PayPal verification/capture error", error);
     return Response.redirect(`${url.origin}/?payment_error=1#board`, 303);
   }
 }
@@ -523,6 +598,9 @@ function html() {
     } else if(params.get('expired') === '1'){
       banner.className='status-banner show warn';
       banner.textContent='That temporary reservation expired before payment was captured.';
+    } else if(params.get('not_approved') === '1'){
+      banner.className='status-banner show warn';
+      banner.textContent='Payment was not approved. Your spot is still only temporarily held.';
     } else if(params.get('payment_error') === '1'){
       banner.className='status-banner show error';
       banner.textContent='PayPal could not confirm the payment. No claim was activated.';
@@ -651,9 +729,9 @@ export default {
     if (url.pathname === "/health") {
       try {
         const row = await env.DB.prepare("SELECT 1 AS ok").first();
-        return json({ ok: row?.ok === 1, service: "claimthehour", version: "1.3", d1: true, paypal_env: env.PAYPAL_ENV || "sandbox", paypal_configured: Boolean(env.PAYPAL_CLIENT_ID && env.PAYPAL_CLIENT_SECRET) });
+        return json({ ok: row?.ok === 1, service: "claimthehour", version: "1.3.1", d1: true, paypal_env: env.PAYPAL_ENV || "sandbox", paypal_configured: Boolean(env.PAYPAL_CLIENT_ID && env.PAYPAL_CLIENT_SECRET) });
       } catch {
-        return json({ ok: false, service: "claimthehour", version: "1.3", d1: false }, 500);
+        return json({ ok: false, service: "claimthehour", version: "1.3.1", d1: false }, 500);
       }
     }
 
