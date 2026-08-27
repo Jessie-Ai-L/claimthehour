@@ -611,6 +611,67 @@ async function handlePayPalReturn(request, env) {
   }
 }
 
+
+function legalPage(title, slug, bodyHtml) {
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>${title} | ClaimTheHour</title>
+  <meta name="robots" content="index,follow">
+  <meta name="description" content="${title} for ClaimTheHour.">
+  <link rel="canonical" href="https://claimthehour.com/${slug}">
+  <style>
+    :root{--bg:#fbf7f1;--ink:#111318;--muted:#666b73;--line:#e7dfd4;--card:#fffdf9}
+    *{box-sizing:border-box}
+    body{margin:0;background:linear-gradient(180deg,#fffaf3 0%,#fbf7f1 100%);color:var(--ink);font:16px/1.65 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    a{color:inherit}
+    .wrap{max-width:980px;margin:0 auto;padding:28px 22px 70px}
+    .top{display:flex;align-items:center;justify-content:space-between;margin-bottom:58px}
+    .brand{font-weight:850;font-size:26px;text-decoration:none}
+    .back{padding:10px 16px;border:1px solid var(--line);border-radius:999px;text-decoration:none;background:#fff}
+    .eyebrow{display:inline-flex;padding:7px 12px;border:1px solid #f0d7ae;border-radius:999px;font-size:12px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;background:#fff7e8}
+    h1{font-size:clamp(42px,7vw,76px);line-height:.98;letter-spacing:-.05em;margin:18px 0}
+    .lede{font-size:20px;color:var(--muted);max-width:760px;margin-bottom:34px}
+    .card{background:rgba(255,255,255,.9);border:1px solid var(--line);border-radius:24px;padding:30px;box-shadow:0 12px 40px rgba(20,20,20,.05)}
+    h2{font-size:24px;margin:28px 0 8px}
+    p{margin:0 0 16px;color:#343840}
+    footer{margin-top:34px;padding-top:22px;border-top:1px solid var(--line);display:flex;gap:18px;flex-wrap:wrap;color:var(--muted);font-size:14px}
+  
+    .trust-strip{max-width:1180px;margin:34px auto 70px;display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+    .trust-strip div{background:rgba(255,255,255,.72);border:1px solid #e9e0d5;border-radius:18px;padding:18px 20px;display:flex;flex-direction:column;gap:2px;box-shadow:0 8px 30px rgba(20,20,20,.035)}
+    .trust-strip strong{font-size:24px;letter-spacing:-.03em}
+    .trust-strip span{font-size:13px;color:#727780}
+    .site-footer{max-width:1180px;margin:72px auto 0;padding:28px 0 38px;border-top:1px solid #e7dfd4;display:flex;justify-content:space-between;gap:24px;flex-wrap:wrap;color:#6f737b;font-size:14px}
+    .site-footer nav{display:flex;gap:18px;flex-wrap:wrap}
+    .site-footer a{text-decoration:none;color:inherit}
+    .site-footer a:hover{text-decoration:underline}
+    @media(max-width:820px){.trust-strip{grid-template-columns:repeat(2,1fr)}}
+
+</style>
+</head>
+<body>
+  <main class="wrap">
+    <div class="top">
+      <a class="brand" href="/">ClaimTheHour</a>
+      <a class="back" href="/">Back to board</a>
+    </div>
+    <span class="eyebrow">ClaimTheHour</span>
+    <h1>${title}</h1>
+    <p class="lede">Clear, simple terms for a simple product.</p>
+    <section class="card">${bodyHtml}</section>
+    <footer>
+      <a href="/privacy">Privacy</a>
+      <a href="/terms">Terms</a>
+      <a href="/refunds">Refunds</a>
+      <a href="/contact">Contact</a>
+    </footer>
+  </main>
+</body>
+</html>`;
+}
+
 function html() {
   const slots = HOURS.map(item => `
     <article class="slot available" id="slot-${item.hour}" data-hour="${item.hour}">
@@ -735,7 +796,13 @@ function html() {
       <div class="grid">${slots}</div>
     </section>
 
-    <section class="how" id="how">
+    <section class="trust-strip">
+          <div><strong>24</strong><span>daily spots</span></div>
+          <div><strong>$1</strong><span>flat claim price</span></div>
+          <div><strong>UTC</strong><span>one global clock</span></div>
+          <div><strong>15 min</strong><span>checkout hold</span></div>
+        </section>
+        <section class="how" id="how">
       <div class="section-label">HOW IT WORKS</div>
       <div class="steps">
         <div class="step"><div class="step-num">01</div><h3>Pick an hour</h3><p>Choose any open spot on today's UTC board.</p></div>
@@ -920,6 +987,17 @@ function html() {
   setInterval(updateClock,1000);
   loadBoard();
 </script>
+
+<footer class="site-footer">
+  <div>© 2026 ClaimTheHour · 24 hours. 24 spots. One day.</div>
+  <nav>
+    <a href="/privacy">Privacy</a>
+    <a href="/terms">Terms</a>
+    <a href="/refunds">Refunds</a>
+    <a href="/contact">Contact</a>
+  </nav>
+</footer>
+
 </body>
 </html>`;
 }
@@ -931,9 +1009,9 @@ export default {
     if (url.pathname === "/health") {
       try {
         const row = await env.DB.prepare("SELECT 1 AS ok").first();
-        return json({ ok: row?.ok === 1, service: "claimthehour", version: "1.4", d1: true, paypal_env: env.PAYPAL_ENV || "sandbox", paypal_configured: Boolean(env.PAYPAL_CLIENT_ID && env.PAYPAL_CLIENT_SECRET), webhook_configured: Boolean(env.PAYPAL_WEBHOOK_ID) });
+        return json({ ok: row?.ok === 1, service: "claimthehour", version: "1.5", d1: true, paypal_env: env.PAYPAL_ENV || "sandbox", paypal_configured: Boolean(env.PAYPAL_CLIENT_ID && env.PAYPAL_CLIENT_SECRET), webhook_configured: Boolean(env.PAYPAL_WEBHOOK_ID) });
       } catch {
-        return json({ ok: false, service: "claimthehour", version: "1.4", d1: false }, 500);
+        return json({ ok: false, service: "claimthehour", version: "1.5", d1: false }, 500);
       }
     }
 
@@ -958,6 +1036,54 @@ export default {
 
     if (url.pathname === "/api/paypal/webhook" && request.method === "POST") {
       return handlePayPalWebhook(request, env);
+    }
+
+    if (request.method === "GET" || request.method === "HEAD") {
+      const headers = {"content-type":"text/html; charset=UTF-8"};
+      if (url.pathname === "/privacy") {
+        return new Response(legalPage("Privacy Policy", "privacy", `
+          <p>ClaimTheHour collects only the information needed to operate daily spot reservations, process payments, prevent abuse, and maintain the service.</p>
+          <h2>Information we process</h2>
+          <p>When you claim a spot, we may process your product name, product URL, short description, reservation time, payment status, and technical request data needed for security and reliability.</p>
+          <h2>Payments</h2>
+          <p>Payments are processed by PayPal. ClaimTheHour does not store your full card or bank details.</p>
+          <h2>Retention</h2>
+          <p>Reservation and transaction records may be retained for operational, fraud-prevention, accounting, and dispute-handling purposes.</p>
+          <h2>Contact</h2>
+          <p>For privacy questions, use the contact page.</p>
+        `), {headers});
+      }
+      if (url.pathname === "/terms") {
+        return new Response(legalPage("Terms of Service", "terms", `
+          <p>ClaimTheHour sells a limited daily promotional placement: one product or website may claim one hourly spot on the current UTC day, subject to availability.</p>
+          <h2>Eligibility and content</h2>
+          <p>You must have the right to promote the submitted URL and content. Illegal, deceptive, infringing, malicious, adult, hateful, or abusive content may be removed without notice.</p>
+          <h2>Availability</h2>
+          <p>Spots are first come, first served. A temporary hold does not become final until payment is successfully completed.</p>
+          <h2>Service changes</h2>
+          <p>We may improve, suspend, or modify the service when needed for security, reliability, compliance, or product changes.</p>
+        `), {headers});
+      }
+      if (url.pathname === "/refunds") {
+        return new Response(legalPage("Refund Policy", "refunds", `
+          <p>Each purchase reserves a time-limited promotional spot for the selected UTC day.</p>
+          <h2>Before payment completes</h2>
+          <p>If payment is not completed, the temporary hold expires automatically and no paid claim is created.</p>
+          <h2>After payment completes</h2>
+          <p>Because the purchased placement is time-sensitive and begins on the selected day, completed claims are generally non-refundable once the placement has been activated.</p>
+          <h2>Exceptions</h2>
+          <p>If ClaimTheHour fails to provide the purchased placement because of a verified service-side error, contact us and we will review the transaction for an appropriate remedy.</p>
+        `), {headers});
+      }
+      if (url.pathname === "/contact") {
+        return new Response(legalPage("Contact", "contact", `
+          <p>Need help with a claim, payment, listing, or policy question?</p>
+          <h2>Email support</h2>
+          <p>Contact: <strong>support@claimthehour.com</strong></p>
+          <h2>What to include</h2>
+          <p>Please include the claimed hour, UTC date, product URL, and—if relevant—the PayPal transaction reference. Never send passwords or full card details.</p>
+        `), {headers});
+      }
     }
 
     if (request.method !== "GET" && request.method !== "HEAD") {
