@@ -1012,7 +1012,7 @@ function html() {
     const shareUrl = location.origin + '/?hour=' + hour + '#board';
     const shareText = 'I claimed ' + hourLabel + ' on ClaimTheHour — 24 hours, 24 spots, $1 each. Claim yours before today is gone.';
     document.getElementById('shareTitle').textContent = 'You claimed ' + hourLabel + ' 🎉';
-    document.getElementById('shareCopy').textContent = 'Your hour is live. Share it and bring people to today\'s board.';
+    document.getElementById('shareCopy').textContent = "Your hour is live. Share it and bring people to today's board.";
     document.getElementById('shareX').href = 'https://twitter.com/intent/tweet?text=' + encodeURIComponent(shareText) + '&url=' + encodeURIComponent(shareUrl);
     document.getElementById('shareReddit').href = 'https://www.reddit.com/submit?url=' + encodeURIComponent(shareUrl) + '&title=' + encodeURIComponent(shareText);
     const copyBtn = document.getElementById('copyShare');

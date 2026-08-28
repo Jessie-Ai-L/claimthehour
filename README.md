@@ -1,20 +1,14 @@
-# ClaimTheHour V1.7 — Viral Share
+# ClaimTheHour V1.7.1 — Viral Share Hotfix
 
-Built from the deployed V1.6.2 Live copy-clean version.
+Fixes a browser-side JavaScript quoting bug introduced in V1.7.
 
-## New
-- After a confirmed PayPal payment, shows a Share your hour panel.
-- Share on X with prefilled claim text and link.
-- Share on Reddit with prefilled title and link.
-- Copy link button with clipboard fallback.
-- Share message includes the claimed UTC hour and the 24 spots / $1 concept.
+Symptoms fixed:
+- Today's date showed —
+- Time left showed —
+- Current UTC time showed —
+- Board incorrectly appeared as 24/24 available
+- Existing D1 claims appeared missing
 
-## Unchanged
-- PayPal Live order/capture logic
-- webhook verification and reconciliation
-- D1 schema and claim logic
-- hold timing
-- SEO/legal routes
-- existing board/UI layout
+The existing D1 claim records were not intentionally deleted. The browser script was failing before it fetched and rendered `/api/board`.
 
-No database migration required. Cloudflare secrets/variables remain managed in Cloudflare.
+No PayPal, D1 schema, webhook, or payment logic changes.
