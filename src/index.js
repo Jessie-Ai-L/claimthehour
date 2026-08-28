@@ -948,7 +948,7 @@ function html() {
       <div class="section-label">HOW IT WORKS</div>
       <div class="steps">
         <div class="step"><div class="step-num">01</div><h3>Pick an hour</h3><p>Choose any open spot on today's UTC board.</p></div>
-        <div class="step"><div class="step-num">02</div><h3>Pay $1 with PayPal</h3><p>Your spot is held while you approve the $1 Sandbox payment.</p></div>
+        <div class="step"><div class="step-num">02</div><h3>Pay $1 with PayPal</h3><p>Your spot is held while you complete the $1 PayPal payment.</p></div>
         <div class="step"><div class="step-num">03</div><h3>It's yours</h3><p>After PayPal confirms payment, your product becomes the official owner of that hour.</p></div>
       </div>
     </section>
@@ -957,16 +957,16 @@ function html() {
       <div class="faq-top"><h2>FAQ</h2><span style="color:var(--muted);font-size:13px">Simple rules. No auction.</span></div>
       <details><summary>What am I buying?</summary><p>A one-hour promotional position on ClaimTheHour's UTC board for the selected date.</p></details>
       <details><summary>Can someone take my hour?</summary><p>No after payment is confirmed. Before payment, a new reservation is temporarily held for ${HOLD_MINUTES} minutes.</p></details>
-      <details><summary>Is this real money right now?</summary><p>Yes. ClaimTheHour uses live PayPal payments. Claiming an hour costs $1 USD, and successful payments are real transactions.</p></details>
+      <details><summary>Is this real money right now?</summary><p>Yes. Claiming an hour costs $1 USD and successful PayPal payments are real transactions.</p></details>
     </section>
   </main>
 </div>
 
 <div class="modal" id="modal">
   <div class="modal-card">
-    <div class="pill">PAYPAL SANDBOX</div>
+    <div class="pill">PAYPAL CHECKOUT</div>
     <h3>Claim <span id="selectedHour"></span></h3>
-    <p>Enter your product, then continue to PayPal to approve the $1 payment.</p>
+    <p>Enter your product, then continue to PayPal to complete the $1 payment.</p>
     <form class="form" id="claimForm">
       <div class="field"><label for="productName">Product name</label><input id="productName" name="product_name" maxlength="60" required placeholder="Your product"></div>
       <div class="field"><label for="productUrl">Product URL</label><input id="productUrl" name="product_url" type="url" required placeholder="https://example.com"></div>
