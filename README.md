@@ -1,14 +1,18 @@
-# ClaimTheHour V1.7.1 — Viral Share Hotfix
+# ClaimTheHour V1.7.2 — Claimed Card Sharing
 
-Fixes a browser-side JavaScript quoting bug introduced in V1.7.
+Adds a no-payment way to validate and reuse Viral Share.
 
-Symptoms fixed:
-- Today's date showed —
-- Time left showed —
-- Current UTC time showed —
-- Board incorrectly appeared as 24/24 available
-- Existing D1 claims appeared missing
+New:
+- Existing CLAIMED cards are clickable.
+- Clicking a CLAIMED card opens the share panel.
+- Share on X, Share on Reddit, and Copy Link work for existing claims.
+- Shared `?hour=` links reopen the matching claimed hour's share panel.
+- The Visit button still opens the product without triggering the share panel.
+- Paid-return flow keeps the original "You claimed..." owner wording.
 
-The existing D1 claim records were not intentionally deleted. The browser script was failing before it fetched and rendered `/api/board`.
-
-No PayPal, D1 schema, webhook, or payment logic changes.
+Unchanged:
+- PayPal Live payment logic
+- PayPal webhook
+- D1 schema/data
+- Reservation/hold/capture logic
+- SEO/legal routes

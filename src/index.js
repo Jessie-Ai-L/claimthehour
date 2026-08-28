@@ -787,7 +787,7 @@ function html() {
     .availability{color:var(--green);font-weight:900;font-size:10px;letter-spacing:.09em;margin-top:13px}.slot p{font-size:12px;line-height:1.45;color:var(--muted);margin:7px 0 14px;flex:1}
     .claim-btn,.visit-btn{background:transparent;border:1.5px solid var(--green);color:#168a45;font-weight:900;font-size:12px;border-radius:999px;padding:8px 9px;cursor:pointer;text-align:center;text-decoration:none}
     .claim-btn:hover{background:#ecfff3;transform:translateY(-1px)}
-    .slot.claimed{background:#14171c;color:#fff;border-color:#14171c}.slot.claimed .dot{background:#fff}.slot.claimed .availability{color:#d8d8d8}
+    .slot.claimed{background:#14171c;color:#fff;border-color:#14171c;cursor:pointer}.slot.claimed .dot{background:#fff}.slot.claimed .availability{color:#d8d8d8}
     .slot.claimed p{color:#bbb}.slot.claimed .visit-btn{background:#fff;border-color:#fff;color:#111319}
     .slot.held{background:#fff8e8;border-color:#efc66c}.slot.held .dot{background:var(--amber)}.slot.held .availability{color:#b87800}
     .slot.now{outline:2px solid #f2b01c;outline-offset:2px}
@@ -1005,17 +1005,30 @@ function html() {
     return h + ' ' + (hour < 12 ? 'AM' : 'PM');
   }
 
-  function setupShareBox(hour){
+  function setupShareBox(hour, claim=null, owner=false){
     if(!Number.isInteger(hour) || hour < 0 || hour > 23) return;
     const box = document.getElementById('shareBox');
     const hourLabel = labelForHour(hour) + ' UTC';
+    const productName = claim && claim.product_name ? String(claim.product_name) : '';
     const shareUrl = location.origin + '/?hour=' + hour + '#board';
-    const shareText = 'I claimed ' + hourLabel + ' on ClaimTheHour — 24 hours, 24 spots, $1 each. Claim yours before today is gone.';
-    document.getElementById('shareTitle').textContent = 'You claimed ' + hourLabel + ' 🎉';
-    document.getElementById('shareCopy').textContent = "Your hour is live. Share it and bring people to today's board.";
+    const shareText = owner
+      ? 'I claimed ' + hourLabel + ' on ClaimTheHour — 24 hours, 24 spots, $1 each. Claim yours before today is gone.'
+      : (productName
+          ? hourLabel + ' belongs to ' + productName + ' today on ClaimTheHour — 24 hours, 24 spots, $1 each.'
+          : 'See who claimed ' + hourLabel + ' today on ClaimTheHour — 24 hours, 24 spots, $1 each.');
+    document.getElementById('shareTitle').textContent = owner
+      ? 'You claimed ' + hourLabel + ' 🎉'
+      : 'Share ' + hourLabel + ' ↗';
+    document.getElementById('shareCopy').textContent = owner
+      ? "Your hour is live. Share it and bring people to today's board."
+      : (productName
+          ? productName + ' owns this hour today. Share it with your audience.'
+          : 'Share this claimed hour with your audience.');
     document.getElementById('shareX').href = 'https://twitter.com/intent/tweet?text=' + encodeURIComponent(shareText) + '&url=' + encodeURIComponent(shareUrl);
     document.getElementById('shareReddit').href = 'https://www.reddit.com/submit?url=' + encodeURIComponent(shareUrl) + '&title=' + encodeURIComponent(shareText);
     const copyBtn = document.getElementById('copyShare');
+    copyBtn.textContent='Copy link';
+    copyBtn.classList.remove('copied');
     copyBtn.onclick = async ()=>{
       try{
         await navigator.clipboard.writeText(shareUrl);
@@ -1027,6 +1040,7 @@ function html() {
       }
     };
     box.classList.add('show');
+    box.scrollIntoView({behavior:'smooth', block:'center'});
   }
 
   function showStatusFromUrl(){
@@ -1035,7 +1049,7 @@ function html() {
     if(params.get('paid') === '1'){
       banner.className='status-banner show success';
       banner.textContent='Payment confirmed. Your hour is officially claimed.';
-      setupShareBox(Number(params.get('hour')));
+      setupShareBox(Number(params.get('hour')), null, true);
     } else if(params.get('cancelled') === '1'){
       banner.className='status-banner show warn';
       banner.textContent='PayPal checkout was cancelled. The temporary hold will expire automatically.';
@@ -1094,7 +1108,11 @@ function html() {
       '<div class="slot-top"><strong>' + labelForHour(claim.claim_hour) + '</strong><span class="dot"></span></div>' +
       '<span class="availability">' + (isPaid ? 'CLAIMED' : 'HELD') + '</span>' +
       '<p><strong>' + safeName + '</strong><br>' + (safeDesc || (isPaid ? 'Owns this hour.' : 'Checkout pending.')) + '</p>' +
-      (isPaid ? '<a class="visit-btn" href="' + safeUrl + '" target="_blank" rel="noopener noreferrer">Visit ↗</a>' : '<span class="form-note">PayPal checkout pending</span>');
+      (isPaid ? '<a class="visit-btn" href="' + safeUrl + '" target="_blank" rel="noopener noreferrer">Visit ↗</a><span class="form-note">Click card to share this hour</span>' : '<span class="form-note">PayPal checkout pending</span>');
+    if(isPaid){
+      el.dataset.claimHour = String(claim.claim_hour);
+      el._claimData = claim;
+    }
   }
 
   async function loadBoard(){
@@ -1106,10 +1124,31 @@ function html() {
       data.claims.forEach(renderClaim);
       document.getElementById('spotsLeft').textContent = (24 - data.claims.length) + ' / 24';
       bindClaimButtons();
+      bindClaimedCards();
+      const deepLinkHour = Number(new URLSearchParams(location.search).get('hour'));
+      if(Number.isInteger(deepLinkHour)){
+        const deepClaim = data.claims.find(c => c.payment_status === 'paid' && Number(c.claim_hour) === deepLinkHour);
+        if(deepClaim && new URLSearchParams(location.search).get('paid') !== '1'){
+          setupShareBox(deepLinkHour, deepClaim, false);
+        }
+      }
       updateClock();
     }catch(error){
       console.error(error);
     }
+  }
+
+  function bindClaimedCards(){
+    document.querySelectorAll('.slot.claimed').forEach(card=>{
+      card.addEventListener('click', e=>{
+        if(e.target.closest('a')) return;
+        const hour = Number(card.dataset.claimHour);
+        if(!Number.isInteger(hour)) return;
+        setupShareBox(hour, card._claimData || null, false);
+      });
+      const visit = card.querySelector('.visit-btn');
+      if(visit) visit.addEventListener('click', e=>e.stopPropagation());
+    });
   }
 
   function bindClaimButtons(){
@@ -1225,9 +1264,9 @@ export default {
     if (url.pathname === "/health") {
       try {
         const row = await env.DB.prepare("SELECT 1 AS ok").first();
-        return json({ ok: row?.ok === 1, service: "claimthehour", version: "1.7.0", d1: true, paypal_env: env.PAYPAL_ENV || "sandbox", paypal_configured: Boolean(env.PAYPAL_CLIENT_ID && env.PAYPAL_CLIENT_SECRET), webhook_configured: Boolean(env.PAYPAL_WEBHOOK_ID) });
+        return json({ ok: row?.ok === 1, service: "claimthehour", version: "1.7.2", d1: true, paypal_env: env.PAYPAL_ENV || "sandbox", paypal_configured: Boolean(env.PAYPAL_CLIENT_ID && env.PAYPAL_CLIENT_SECRET), webhook_configured: Boolean(env.PAYPAL_WEBHOOK_ID) });
       } catch {
-        return json({ ok: false, service: "claimthehour", version: "1.7.0", d1: false }, 500);
+        return json({ ok: false, service: "claimthehour", version: "1.7.2", d1: false }, 500);
       }
     }
 
