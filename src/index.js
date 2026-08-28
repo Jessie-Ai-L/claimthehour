@@ -802,6 +802,7 @@ function html() {
     .form{display:grid;gap:12px;margin-top:18px}.field{display:grid;gap:6px}.field label{font-size:12px;font-weight:900}.field input,.field textarea{width:100%;border:1px solid #dedbd4;border-radius:12px;padding:12px 13px;background:#fff}.field textarea{resize:vertical;min-height:82px}
     .form-note{font-size:12px;color:var(--muted)}.form-error{font-size:13px;color:#b42318;min-height:18px}.modal-actions{display:flex;gap:10px;margin-top:8px}.modal-actions button{flex:1;border-radius:999px;padding:12px;border:1px solid #d9d9d9;background:#fff;font-weight:800;cursor:pointer}.modal-actions .primary{background:#0070ba;color:white;border-color:#0070ba}.modal-actions .primary:disabled{opacity:.55;cursor:wait}
     .success-box{display:none;background:#f1fff6;border:1px solid #b9e8ca;border-radius:14px;padding:14px;color:#186c3d;font-size:13px;line-height:1.5;margin-top:14px}
+    .share-box{display:none;max-width:850px;margin:14px auto 0;padding:18px;border:1px solid #b6e6c7;border-radius:18px;background:rgba(241,255,246,.92);text-align:left;box-shadow:var(--shadow)}.share-box.show{display:block}.share-box strong{display:block;font-size:16px;color:#155f37;margin-bottom:5px}.share-box p{margin:0 0 13px;color:#4f6658;font-size:13px;line-height:1.5}.share-actions{display:flex;gap:9px;flex-wrap:wrap}.share-actions a,.share-actions button{border:1px solid #cbd8cf;background:#fff;color:#172019;border-radius:999px;padding:9px 13px;font-weight:800;font-size:12px;text-decoration:none;cursor:pointer}.share-actions a:first-child{background:#111319;color:#fff;border-color:#111319}.share-actions button.copied{background:#e9fff1;border-color:#8bd4a5;color:#146a38}
     @media(max-width:900px){.grid{grid-template-columns:repeat(4,1fr)}}
     @media(max-width:700px){nav a:not(.nav-cta){display:none}.hero{padding-top:48px}h1{font-size:56px}.stats{grid-template-columns:1fr}.live-row{grid-template-columns:1fr}.grid{grid-template-columns:repeat(2,1fr)}.steps{grid-template-columns:1fr}.board-head,.faq-top,.footer-row{align-items:flex-start;flex-direction:column}.legend{margin-top:10px}.footer-links{flex-wrap:wrap}}
   
@@ -914,6 +915,15 @@ function html() {
       <h1>Claim an hour of<br>the internet<span class="dot-end">.</span></h1>
       <p class="hero-copy">Pick an open hour, claim it for $1, and put your product in the spotlight.<br>Once an hour is claimed, it's gone for the day.</p>
       <div id="statusBanner" class="status-banner"></div>
+      <div id="shareBox" class="share-box" aria-live="polite">
+        <strong id="shareTitle">You claimed an hour 🎉</strong>
+        <p id="shareCopy">Tell people which hour is yours today.</p>
+        <div class="share-actions">
+          <a id="shareX" href="#" target="_blank" rel="noopener noreferrer">Share on X ↗</a>
+          <a id="shareReddit" href="#" target="_blank" rel="noopener noreferrer">Share on Reddit ↗</a>
+          <button id="copyShare" type="button">Copy link</button>
+        </div>
+      </div>
 
       <div class="stats">
         <div class="stat"><div class="ico">◷</div><div><small>TODAY'S DATE · UTC</small><strong id="todayDate">—</strong></div></div>
@@ -995,12 +1005,37 @@ function html() {
     return h + ' ' + (hour < 12 ? 'AM' : 'PM');
   }
 
+  function setupShareBox(hour){
+    if(!Number.isInteger(hour) || hour < 0 || hour > 23) return;
+    const box = document.getElementById('shareBox');
+    const hourLabel = labelForHour(hour) + ' UTC';
+    const shareUrl = location.origin + '/?hour=' + hour + '#board';
+    const shareText = 'I claimed ' + hourLabel + ' on ClaimTheHour — 24 hours, 24 spots, $1 each. Claim yours before today is gone.';
+    document.getElementById('shareTitle').textContent = 'You claimed ' + hourLabel + ' 🎉';
+    document.getElementById('shareCopy').textContent = 'Your hour is live. Share it and bring people to today\'s board.';
+    document.getElementById('shareX').href = 'https://twitter.com/intent/tweet?text=' + encodeURIComponent(shareText) + '&url=' + encodeURIComponent(shareUrl);
+    document.getElementById('shareReddit').href = 'https://www.reddit.com/submit?url=' + encodeURIComponent(shareUrl) + '&title=' + encodeURIComponent(shareText);
+    const copyBtn = document.getElementById('copyShare');
+    copyBtn.onclick = async ()=>{
+      try{
+        await navigator.clipboard.writeText(shareUrl);
+        copyBtn.textContent='Copied ✓';
+        copyBtn.classList.add('copied');
+        setTimeout(()=>{copyBtn.textContent='Copy link';copyBtn.classList.remove('copied')},1800);
+      }catch(error){
+        window.prompt('Copy this link:', shareUrl);
+      }
+    };
+    box.classList.add('show');
+  }
+
   function showStatusFromUrl(){
     const params = new URLSearchParams(location.search);
     const banner = document.getElementById('statusBanner');
     if(params.get('paid') === '1'){
       banner.className='status-banner show success';
       banner.textContent='Payment confirmed. Your hour is officially claimed.';
+      setupShareBox(Number(params.get('hour')));
     } else if(params.get('cancelled') === '1'){
       banner.className='status-banner show warn';
       banner.textContent='PayPal checkout was cancelled. The temporary hold will expire automatically.';
@@ -1190,9 +1225,9 @@ export default {
     if (url.pathname === "/health") {
       try {
         const row = await env.DB.prepare("SELECT 1 AS ok").first();
-        return json({ ok: row?.ok === 1, service: "claimthehour", version: "1.6.2", d1: true, paypal_env: env.PAYPAL_ENV || "sandbox", paypal_configured: Boolean(env.PAYPAL_CLIENT_ID && env.PAYPAL_CLIENT_SECRET), webhook_configured: Boolean(env.PAYPAL_WEBHOOK_ID) });
+        return json({ ok: row?.ok === 1, service: "claimthehour", version: "1.7.0", d1: true, paypal_env: env.PAYPAL_ENV || "sandbox", paypal_configured: Boolean(env.PAYPAL_CLIENT_ID && env.PAYPAL_CLIENT_SECRET), webhook_configured: Boolean(env.PAYPAL_WEBHOOK_ID) });
       } catch {
-        return json({ ok: false, service: "claimthehour", version: "1.6.2", d1: false }, 500);
+        return json({ ok: false, service: "claimthehour", version: "1.7.0", d1: false }, 500);
       }
     }
 
