@@ -618,6 +618,14 @@ function legalPage(title, slug, bodyHtml) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-3Y0EYTKM4R"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-3Y0EYTKM4R');
+  </script>
   <title>${title} | ClaimTheHour</title>
   <meta name="robots" content="index,follow">
   <meta name="description" content="${title} for ClaimTheHour.">
@@ -737,6 +745,14 @@ function html() {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-3Y0EYTKM4R"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-3Y0EYTKM4R');
+  </script>
   <title>ClaimTheHour — Claim an Hour of the Internet for $1</title>
   <meta name="theme-color" content="#fbfaf7">
   <style>
